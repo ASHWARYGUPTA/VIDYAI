@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     sarvam_api_key: str = ""
     llm_model: str = "google/gemma-3-4b-it:free"
+    # Comma-separated fallback models tried in order when primary hits 429
+    llm_fallback_models: str = "meta-llama/llama-3.2-1b-instruct:free,google/gemma-3-4b-it:free"
 
     # Queue
     redis_url: str = "redis://localhost:6379/0"
@@ -36,6 +38,8 @@ class Settings(BaseSettings):
 
     # Proxy (for YouTube transcript fetching when IP is blocked)
     youtube_proxy_url: str = ""
+    # Path to Netscape cookies.txt for yt-dlp (bypasses bot detection / age gates)
+    youtube_cookies_file: str = "services/api/cookies.txt"
 
     # App
     environment: str = "development"

@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 import logging
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
@@ -15,8 +16,14 @@ async def get_current_user(
 ) -> dict:
     """Validate Supabase JWT and return user dict."""
     client = get_supabase_service_client()
+    token = credentials.credentials
+
+    def _validate():
+        return client.auth.get_user(token)
+
     try:
-        response = client.auth.get_user(credentials.credentials)
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(None, _validate)
         if not response.user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

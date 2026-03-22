@@ -52,12 +52,12 @@ export default function PlannerPage() {
 
   const { data: today, isLoading: todayLoading } = useQuery({
     queryKey: ["plan-today"],
-    queryFn: plannerApi.today,
+    queryFn: () => plannerApi.today(),
   });
 
   const { data: week, isLoading: weekLoading } = useQuery({
     queryKey: ["plan-week"],
-    queryFn: plannerApi.week,
+    queryFn: () => plannerApi.week(),
   });
 
   const generateMutation = useMutation({
@@ -142,7 +142,7 @@ export default function PlannerPage() {
             <Skeleton className="h-64" />
           ) : week?.days?.length ? (
             <div className="space-y-4">
-              {week.days.map((day: { plan_date: string; slots: Slot[]; completion_percent?: number }) => {
+              {(week.days as { plan_date: string; slots: Slot[]; completion_percent?: number }[]).map((day) => {
                 const slots = day.slots ?? [];
                 const doneCnt = slots.filter((s) => s.is_completed || s.status === "completed").length;
                 const totalMin = slots.reduce((acc, s) => acc + (s.duration_minutes ?? 0), 0);

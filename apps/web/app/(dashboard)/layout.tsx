@@ -11,7 +11,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .from("profiles")
     .select("onboarding_completed")
     .eq("id", user.id)
-    .single();
+    .single() as { data: { onboarding_completed?: boolean } | null };
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
 

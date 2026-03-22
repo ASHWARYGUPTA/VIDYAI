@@ -1,9 +1,10 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, Mic, MicOff, BookOpen } from "lucide-react";
+import { Send, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { tutorApi } from "@/lib/api/endpoints";
+import { NoteRenderer } from "@/components/markdown-renderer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +36,7 @@ export default function TutorPage() {
 
   const { data: history, isLoading: histLoading } = useQuery({
     queryKey: ["tutor-history"],
-    queryFn: () => tutorApi.history({ limit: 5 }) as Promise<{ sessions?: { id: string; question: string; created_at: string }[] }>,
+    queryFn: () => tutorApi.history({ limit: 5 }) as Promise<{ doubts?: { id: string; question_text: string; created_at: string }[] }>,
   });
 
   const askMutation = useMutation({
@@ -98,7 +99,11 @@ export default function TutorPage() {
                       : "bg-muted rounded-tl-sm"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  {msg.role === "user" ? (
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  ) : (
+                    <NoteRenderer markdown={msg.content} />
+                  )}
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="mt-3 space-y-1.5 border-t border-border/40 pt-2">
                       <p className="text-xs font-medium opacity-70">Sources</p>

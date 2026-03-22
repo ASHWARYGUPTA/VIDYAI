@@ -15,20 +15,6 @@ router = APIRouter()
 async def ask(body: AskRequest, user_id: CurrentUserID):
     client = get_supabase_service_client()
 
-    # Check free tier rate limit (10/day)
-    profile = client.table("profiles").select("subscription_tier").eq("id", str(user_id)).single().execute()
-    tier = profile.data["subscription_tier"] if profile.data else "free"
-
-    if tier == "free":
-        from datetime import date
-        today = date.today().isoformat()
-        count = client.table("doubt_sessions").select("id", count="exact").eq("user_id", str(user_id)).gte("created_at", today).execute()
-        if (count.count or 0) >= 10:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={"error": "rate_limit", "retry_after": 86400, "code": "FREE_LIMIT_REACHED"},
-            )
-
     session_id = body.session_id
     if not session_id:
         sess = client.table("study_sessions").insert({

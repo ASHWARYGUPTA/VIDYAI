@@ -21,18 +21,23 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 def _make_llm(model: str) -> ChatOpenAI:
-    """Create a LangChain ChatOpenAI client pointed at OpenRouter."""
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENN_ROUTER_API_KEY") or ""
-    if not model:
-        model = os.getenv("LLM_MODEL", "google/gemma-3-4b-it:free")
-    if model.startswith("openrouter/"):
-        model = model[len("openrouter/"):]
-    return ChatOpenAI(
-        model=model,
-        openai_api_key=api_key,
-        openai_api_base=_OPENROUTER_BASE_URL,
-        temperature=0,
-    )
+    """Create a LangChain ChatOpenAI client with fallback chain via get_llm()."""
+    try:
+        from ..utils.llm import get_llm
+        return get_llm(model=model or None, temperature=0)
+    except ImportError:
+        # Standalone / script usage — build directly without fallbacks
+        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENN_ROUTER_API_KEY") or ""
+        if not model:
+            model = os.getenv("LLM_MODEL", "google/gemma-3-4b-it:free")
+        if model.startswith("openrouter/"):
+            model = model[len("openrouter/"):]
+        return ChatOpenAI(
+            model=model,
+            openai_api_key=api_key,
+            openai_api_base=_OPENROUTER_BASE_URL,
+            temperature=0,
+        )
 
 
 def count_tokens(text, model=None):

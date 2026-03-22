@@ -27,12 +27,12 @@ export default function RevisionPage() {
 
   const { data: deck, isLoading } = useQuery({
     queryKey: ["deck-today"],
-    queryFn: retentionApi.today,
+    queryFn: () => retentionApi.today(),
   });
 
   const { data: streakData } = useQuery({
     queryKey: ["streak"],
-    queryFn: retentionApi.streak,
+    queryFn: () => retentionApi.streak(),
   });
 
   const reviewMutation = useMutation({

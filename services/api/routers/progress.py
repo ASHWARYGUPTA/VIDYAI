@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 import logging
 from fastapi import APIRouter, Query
 from ..dependencies import CurrentUserID
@@ -26,21 +27,43 @@ def _xp_to_level(total_xp: int) -> tuple[int, int]:
 @router.get("/dashboard")
 async def get_dashboard(user_id: CurrentUserID):
     client = get_supabase_service_client()
+    uid = str(user_id)
     today = date.today().isoformat()
+    week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
 
-    streak = ms(client.table("revision_streaks").select("*").eq("user_id", str(user_id)))
-    today_plan = ms(client.table("daily_study_plans").select("*").eq("user_id", str(user_id)).eq("plan_date", today))
-    due_count = client.table("revision_queue").select("id", count="exact").eq("user_id", str(user_id)).eq("is_completed", False).lte("scheduled_date", today).execute()
-    lcs = client.table("learner_concept_states").select("mastery_state").eq("user_id", str(user_id)).execute()
+    loop = asyncio.get_running_loop()
+
+    def _streak():
+        return ms(client.table("revision_streaks").select("*").eq("user_id", uid))
+
+    def _plan():
+        return ms(client.table("daily_study_plans").select("*").eq("user_id", uid).eq("plan_date", today))
+
+    def _due():
+        return client.table("revision_queue").select("id", count="exact").eq("user_id", uid).eq("is_completed", False).lte("scheduled_date", today).execute()
+
+    def _lcs():
+        return client.table("learner_concept_states").select("mastery_state").eq("user_id", uid).execute()
+
+    def _heatmap():
+        return client.table("daily_activity_heatmap").select("xp_earned").eq("user_id", uid).gte("activity_date", week_start).execute()
+
+    def _last_test():
+        return ms(client.table("test_sessions").select("score, max_score").eq("user_id", uid).not_.is_("submitted_at", "null").order("submitted_at", desc=True).limit(1))
+
+    streak, today_plan, due_count, lcs, heatmap, last_test = await asyncio.gather(
+        loop.run_in_executor(None, _streak),
+        loop.run_in_executor(None, _plan),
+        loop.run_in_executor(None, _due),
+        loop.run_in_executor(None, _lcs),
+        loop.run_in_executor(None, _heatmap),
+        loop.run_in_executor(None, _last_test),
+    )
 
     states = [r["mastery_state"] for r in (lcs.data or [])]
     knowledge_summary = {s: states.count(s) for s in ["mastered", "learning", "unseen", "forgotten"]}
-
-    week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
-    heatmap = client.table("daily_activity_heatmap").select("xp_earned").eq("user_id", str(user_id)).gte("activity_date", week_start).execute()
     weekly_xp = sum(r.get("xp_earned", 0) for r in (heatmap.data or []))
 
-    last_test = ms(client.table("test_sessions").select("score, max_score").eq("user_id", str(user_id)).not_.is_("submitted_at", "null").order("submitted_at", desc=True).limit(1))
     recent_score = None
     if last_test.data and last_test.data.get("max_score"):
         recent_score = round(last_test.data["score"] / last_test.data["max_score"] * 100, 1)

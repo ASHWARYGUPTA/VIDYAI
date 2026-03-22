@@ -218,7 +218,7 @@ def _find_node_by_id(tree_structure, node_id: str) -> Optional[dict]:
     return None
 
 
-def _build_video_index_tree(title: str, summary: str, notes: list[dict]) -> tuple[dict, list[str]]:
+def _build_video_index_tree(title: str, summary: str, notes: list[dict] | str) -> tuple[dict, list[str]]:
     """
     Build a PageIndex-style tree from a processed video's structured notes.
     Returns (tree_dict, page_texts) where:
@@ -234,7 +234,22 @@ def _build_video_index_tree(title: str, summary: str, notes: list[dict]) -> tupl
         "summary": (summary or "")[:300],
     }]
 
-    for i, note in enumerate(notes):
+    # notes may be a Markdown string (new format) or list of {heading, content} dicts (legacy)
+    if isinstance(notes, str):
+        import re as _re
+        sections = _re.split(r'\n(?=## )', notes.strip())
+        notes_list = []
+        for sec in sections:
+            lines = sec.strip().splitlines()
+            if not lines:
+                continue
+            h = lines[0].lstrip('# ').strip() if lines[0].startswith('#') else f"Section {len(notes_list)+1}"
+            body = '\n'.join(lines[1:]).strip()
+            notes_list.append({"heading": h, "content": body})
+    else:
+        notes_list = notes or []
+
+    for i, note in enumerate(notes_list):
         content = note.get("content", "")
         heading = note.get("heading", f"Section {i + 1}")
         page_texts.append(content)

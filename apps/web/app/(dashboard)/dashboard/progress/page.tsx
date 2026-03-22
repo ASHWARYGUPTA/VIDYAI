@@ -23,7 +23,7 @@ function intensityClass(xp: number) {
 export default function ProgressPage() {
   const { data: dash, isLoading: dashLoading } = useQuery({
     queryKey: ["dashboard"],
-    queryFn: progressApi.dashboard,
+    queryFn: () => progressApi.dashboard(),
   });
 
   const { data: heatmap, isLoading: heatLoading } = useQuery({
@@ -33,12 +33,12 @@ export default function ProgressPage() {
 
   const { data: weekly, isLoading: weekLoading } = useQuery({
     queryKey: ["weekly-progress"],
-    queryFn: progressApi.weekly,
+    queryFn: () => progressApi.weekly(),
   });
 
   const { data: xpData, isLoading: xpLoading } = useQuery({
     queryKey: ["xp"],
-    queryFn: progressApi.xp,
+    queryFn: () => progressApi.xp(),
   });
 
   if (dashLoading) {
@@ -142,7 +142,7 @@ export default function ProgressPage() {
               <div>
                 <h2 className="text-sm font-semibold mb-3">XP History</h2>
                 <div className="space-y-2">
-                  {(xpData?.ledger ?? []).slice(0, 14).map((entry: { activity_date: string; xp_earned: number; study_minutes: number }) => (
+                  {((xpData?.ledger ?? []) as { activity_date: string; xp_earned: number; study_minutes: number }[]).slice(0, 14).map((entry) => (
                     <div key={entry.activity_date} className="flex items-center gap-3 rounded-lg border p-3">
                       <div className="flex-1">
                         <p className="text-sm">{new Date(entry.activity_date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</p>
@@ -164,7 +164,7 @@ export default function ProgressPage() {
               {heatLoading ? <Skeleton className="h-32" /> : (
                 <div className="overflow-x-auto">
                   <div className="flex gap-1 flex-wrap">
-                    {(heatmap?.days ?? []).map((day: { date: string; xp_earned: number; study_minutes: number }) => (
+                    {((heatmap?.days ?? []) as { date: string; xp_earned: number; study_minutes: number }[]).map((day) => (
                       <div
                         key={day.date}
                         title={`${day.date}: ${day.xp_earned} XP, ${day.study_minutes}m`}

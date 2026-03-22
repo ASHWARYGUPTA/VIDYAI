@@ -1,7 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { Flame, BookOpen, Calendar, Zap } from "lucide-react";
-import { progressApi, retentionApi, plannerApi } from "@/lib/api/endpoints";
+import { progressApi, retentionApi } from "@/lib/api/endpoints";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,17 +58,14 @@ interface PlanSlot {
 export default function DashboardPage() {
   const { data: dash, isLoading: dashLoading } = useQuery({
     queryKey: ["dashboard"],
-    queryFn: progressApi.dashboard,
+    queryFn: () => progressApi.dashboard(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: deck, isLoading: deckLoading } = useQuery({
     queryKey: ["deck-today"],
-    queryFn: retentionApi.today,
-  });
-
-  const { data: today, isLoading: planLoading } = useQuery({
-    queryKey: ["plan-today"],
-    queryFn: plannerApi.today,
+    queryFn: () => retentionApi.today(),
+    staleTime: 5 * 60 * 1000,
   });
 
   if (dashLoading) {
@@ -87,12 +84,12 @@ export default function DashboardPage() {
   const dueCards = d?.due_cards_count ?? 0;
   const weeklyXp = d?.weekly_xp ?? 0;
 
-  // Planner: today?.plan?.slots
-  const planData = today as { plan?: { slots?: PlanSlot[]; completion_percent?: number } } | undefined;
-  const slots = planData?.plan?.slots ?? [];
+  // Planner: from dashboard today_plan
+  const planRaw = d?.today_plan as { slots?: PlanSlot[]; completion_percent?: number } | null | undefined;
+  const slots = planRaw?.slots ?? [];
   const completedSlots = slots.filter((s) => s.is_completed || s.status === "completed").length;
   const totalSlots = slots.length;
-  const planPct = totalSlots ? Math.round((completedSlots / totalSlots) * 100) : 0;
+  const planPct = planRaw?.completion_percent ?? (totalSlots ? Math.round((completedSlots / totalSlots) * 100) : 0);
 
   // Deck
   const cards = deck?.cards ?? [];
@@ -120,7 +117,7 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Today&apos;s Study Plan</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {planLoading ? (
+            {dashLoading ? (
               Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14" />)
             ) : slots.length ? (
               <>

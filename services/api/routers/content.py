@@ -80,12 +80,29 @@ def _process_video_background(video_id: str, video_id_extracted: str, language: 
 
 
 def _get_transcript(video_id: str) -> tuple[str, list]:
+    import os
+    import requests
+    from http.cookiejar import MozillaCookieJar
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api.proxies import GenericProxyConfig
+
     settings = get_settings()
     proxy_config = GenericProxyConfig(settings.youtube_proxy_url) if settings.youtube_proxy_url else None
+
+    # Build a requests.Session with YouTube cookies if available
+    session = requests.Session()
+    cookies_file = settings.youtube_cookies_file
+    if cookies_file and os.path.isfile(cookies_file):
+        jar = MozillaCookieJar(cookies_file)
+        try:
+            jar.load(ignore_discard=True, ignore_expires=True)
+            session.cookies = jar
+            logger.info("Loaded %d cookies from %s", len(jar), cookies_file)
+        except Exception as ce:
+            logger.warning("Could not load cookies file: %s", ce)
+
     try:
-        ytt = YouTubeTranscriptApi(proxy_config=proxy_config)
+        ytt = YouTubeTranscriptApi(proxy_config=proxy_config, http_client=session)
         try:
             fetched = ytt.fetch(video_id, languages=["en", "en-IN", "en-GB", "hi"])
         except Exception:
@@ -97,9 +114,71 @@ def _get_transcript(video_id: str) -> tuple[str, list]:
         return text, entries
     except Exception as e:
         err_str = str(e)
-        if "no element found" in err_str or "blocking" in err_str.lower() or "TranscriptsDisabled" in type(e).__name__ or "NoTranscriptFound" in type(e).__name__:
+        logger.warning("youtube-transcript-api failed (%s: %s), trying yt-dlp fallback", type(e).__name__, err_str[:100])
+        # Try yt-dlp for any failure — it handles bot detection, age gates, etc.
+        try:
+            return _get_transcript_ytdlp(video_id)
+        except ValueError:
+            pass
+        raise ValueError("NO_TRANSCRIPT")
+
+
+def _get_transcript_ytdlp(video_id: str) -> tuple[str, list]:
+    """Fallback transcript extraction via yt-dlp using cookies.txt."""
+    import os
+    import json
+    import tempfile
+    import subprocess
+    settings = get_settings()
+    cookies_file = settings.youtube_cookies_file
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    # Prefer the venv's yt-dlp (newer version) over any system-installed one
+    import shutil
+    venv_ytdlp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "venv", "bin", "yt-dlp")
+    ytdlp_bin = venv_ytdlp if os.path.isfile(venv_ytdlp) else shutil.which("yt-dlp") or "yt-dlp"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cmd = [
+            ytdlp_bin,
+            "--no-update",
+            "--write-auto-sub",
+            "--sub-lang", "en",
+            "--skip-download",
+            "--sub-format", "json3",
+            "-o", os.path.join(tmpdir, "%(id)s"),
+        ]
+        if cookies_file and os.path.isfile(cookies_file):
+            cmd += ["--cookies", cookies_file]
+        cmd.append(url)
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            logger.warning("yt-dlp failed (rc=%d): %s", result.returncode, result.stderr[-300:])
             raise ValueError("NO_TRANSCRIPT")
-        raise ValueError(f"Could not fetch transcript: {e}")
+
+        # Find the downloaded .json3 subtitle file
+        for fname in os.listdir(tmpdir):
+            if fname.endswith(".json3"):
+                with open(os.path.join(tmpdir, fname)) as f:
+                    data = json.load(f)
+                entries = []
+                for event in data.get("events", []):
+                    segs = event.get("segs")
+                    if not segs:
+                        continue
+                    text = "".join(s.get("utf8", "") for s in segs).strip()
+                    if text:
+                        entries.append({
+                            "text": text,
+                            "start": event.get("tStartMs", 0) / 1000,
+                            "duration": event.get("dDurationMs", 0) / 1000,
+                        })
+                text = " ".join(e["text"] for e in entries)
+                return text, entries
+
+    raise ValueError("NO_TRANSCRIPT")
 
 
 _CHUNK_WORDS = 800   # words per map chunk (~1000 tokens each)
@@ -111,15 +190,30 @@ def _chunk_transcript(text: str, chunk_words: int = _CHUNK_WORDS) -> list[str]:
     return [" ".join(words[i: i + chunk_words]) for i in range(0, len(words), chunk_words)]
 
 
+_NOTES_SYSTEM = """\
+You are an expert study-notes creator for JEE/NEET/UPSC students.
+Convert the lecture content into **Obsidian-flavoured Markdown** notes.
+
+Rules:
+- Use **topic-based headings** (## Concept Name) — never "Part 1", "Part 2", "Section 1"
+- Add a Mermaid diagram where it helps visualise relationships or a process (flowchart TD or mindmap)
+- Use > [!NOTE], > [!TIP], > [!IMPORTANT] callout blocks for key facts
+- Use **bold** for key terms, `code` for formulas/values
+- Use [[WikiLinks]] for concepts that relate to each other
+- Tables for comparisons (at least one table if applicable)
+- Maximum 600 words total. Be dense and precise — no filler.
+- Return ONLY valid JSON (no markdown fences around the JSON itself):
+{"title":"concise video title","summary":"3-4 sentence executive summary","notes":"<full obsidian markdown string>","key_concepts":["concept1","concept2"]}
+"""
+
+
 def _map_chunk(chunk: str, model: str) -> str:
     """Extract a compact bullet-point summary from one chunk."""
     from ..utils.llm import get_llm
     from langchain_core.messages import HumanMessage
     prompt = (
-        "You are a YouTube video summarizer and study-notes assistant for JEE/NEET/UPSC students.\n"
-        "Read the transcript excerpt below and extract ONLY the key academic points "
-        "as a tight bullet list (max 8 bullets, each ≤ 20 words). "
-        "Skip filler, greetings, and ads. Return plain text, no JSON.\n\n"
+        "Extract ONLY the key academic facts from this transcript excerpt as a tight bullet list "
+        "(max 8 bullets, each ≤ 20 words). Skip filler, greetings, ads. Plain text only.\n\n"
         f"Excerpt:\n{chunk}"
     )
     try:
@@ -131,26 +225,20 @@ def _map_chunk(chunk: str, model: str) -> str:
 
 
 def _reduce_summaries(bullet_blocks: list[str], model: str) -> dict:
-    """Merge all mapped bullet blocks into structured JSON."""
+    """Merge all mapped bullet blocks into structured Markdown notes."""
     from ..utils.llm import get_llm
     from langchain_core.messages import HumanMessage
     combined = "\n---\n".join(b for b in bullet_blocks if b)
     prompt = (
-        "You are a YouTube video summarizer and study-notes assistant for JEE/NEET/UPSC students.\n"
-        "Below are extracted bullet points from different parts of a lecture.\n"
-        "Merge and deduplicate them, then return ONLY valid JSON:\n"
-        '{"title":"concise video title",'
-        '"summary":"Summary of the entire video in bullet points within 250 words",'
-        '"notes":[{"heading":"Part N: topic","content":"detailed key points for this part of the video"}]}\n'
-        "The notes array must cover the video part by part in order.\n\n"
-        f"Bullet extracts:\n{combined}"
+        f"{_NOTES_SYSTEM}\n\n"
+        "Key points extracted from the lecture:\n"
+        f"{combined}"
     )
     try:
-        llm = get_llm(model=model, temperature=0.2, max_tokens=1024)
+        llm = get_llm(model=model, temperature=0.2, max_tokens=1500)
         response = llm.invoke([HumanMessage(content=prompt)])
-        raw = response.content or ""
-        if "```" in raw:
-            raw = raw[raw.find("{"):raw.rfind("}") + 1]
+        raw = (response.content or "").strip()
+        raw = raw[raw.find("{"):raw.rfind("}") + 1]
         return json.loads(raw)
     except Exception:
         return {}
@@ -167,16 +255,11 @@ def _extract_fields(transcript: str, language: str) -> tuple[list, str, str]:
         model = None  # uses LLM_MODEL from env
         words = transcript.split()
 
-        # Short transcripts: single call, no chunking needed (saves tokens + latency)
+        # Short transcripts: single call, no chunking needed
         if len(words) <= _CHUNK_WORDS:
             prompt = (
-                "You are a YouTube video summarizer and study-notes assistant for JEE/NEET/UPSC students.\n"
-                "Read the transcript and return ONLY valid JSON:\n"
-                '{"title":"concise title",'
-                '"summary":"Summary of the entire video in bullet points within 250 words",'
-                '"notes":[{"heading":"Part N: topic","content":"detailed key points for this part of the video"}]}\n'
-                "The notes array must cover the video part by part in order.\n\n"
-                f"Transcript:\n{transcript}"
+                f"{_NOTES_SYSTEM}\n\n"
+                f"Transcript:\n{transcript[:6000]}"
             )
             llm = get_llm(model=model, temperature=0.2, max_tokens=1024)
             response = llm.invoke([HumanMessage(content=prompt)])
@@ -184,7 +267,8 @@ def _extract_fields(transcript: str, language: str) -> tuple[list, str, str]:
             if "```" in raw:
                 raw = raw[raw.find("{"):raw.rfind("}") + 1]
             data = json.loads(raw)
-            return data.get("notes", []), data.get("summary", ""), data.get("title", "Untitled")
+            notes = data.get("notes", "")
+            return notes, data.get("summary", ""), data.get("title", "Untitled")
 
         # Long transcripts: MAP-REDUCE
         chunks = _chunk_transcript(transcript, _CHUNK_WORDS)
@@ -205,7 +289,8 @@ def _extract_fields(transcript: str, language: str) -> tuple[list, str, str]:
         if not data:
             return _fallback_extract(transcript)
 
-        return data.get("notes", []), data.get("summary", ""), data.get("title", "Untitled")
+        notes = data.get("notes", "")
+        return notes, data.get("summary", ""), data.get("title", "Untitled")
 
     except Exception as e:
         logger.warning("LangChain map-reduce failed, using fallback", extra={"error": str(e)})

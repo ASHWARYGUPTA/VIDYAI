@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 import sentry_sdk
 
 from .config import get_settings
-from .routers import auth, tutor, retention, planner, mcq, content, progress, syllabus, notifications, partner, mcp as mcp_router, knowledge
+from .routers import auth, tutor, retention, planner, mcq, content, progress, syllabus, notifications, partner, mcp as mcp_router, knowledge, pdf_tests
 from .middleware import RateLimitMiddleware, PartnerKeyMiddleware
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["notifications"])
     app.include_router(partner.router, prefix="/api/v1/partner", tags=["partner"])
     app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
+    app.include_router(pdf_tests.router, prefix="/api/v1/tests", tags=["tests"])
     app.include_router(mcp_router.router, tags=["mcp"])
 
     @app.exception_handler(Exception)
