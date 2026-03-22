@@ -40,6 +40,14 @@ export const progressApi = {
       top_10: unknown[];
       my_xp: number;
     }>(`/api/v1/progress/leaderboard?exam_type=${examType}&period=${period}`),
+  subject: (subjectId: string) =>
+    api.get<{
+      subject: unknown;
+      chapters: unknown[];
+      mastery_distribution: Record<string, number>;
+      test_performance: { sessions_count: number; average_accuracy: number };
+      concept_map: unknown[];
+    }>(`/api/v1/progress/subject/${subjectId}`),
 };
 
 // Tutor
@@ -104,6 +112,16 @@ export const retentionApi = {
     ),
   weakAreas: (limit = 10) =>
     api.get(`/api/v1/retention/weak-areas?limit=${limit}`),
+  forgettingCurve: (params?: { days?: number; conceptId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.days) qs.set("days", String(params.days));
+    if (params?.conceptId) qs.set("concept_id", params.conceptId);
+    return api.get<{
+      curve: { date: string; avg_retention: number | null }[];
+      next_review_due: string | null;
+      current_avg_retention: number;
+    }>(`/api/v1/retention/forgetting-curve${qs.toString() ? `?${qs}` : ""}`);
+  },
 };
 
 // Planner

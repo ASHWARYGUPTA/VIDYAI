@@ -64,8 +64,76 @@ async def get_today_plan(user_id: CurrentUserID):
         .eq("plan_date", today)
     )
     if not result.data:
-        return {"plan": None, "completion_percent": 0}
-    return {"plan": result.data, "completion_percent": result.data.get("completion_percent", 0)}
+        return {"plan": None, "completion_percent": 0, "rebalance_alerts": [], "was_auto_rebalanced": False}
+
+    # Detect retention dips: compare last 2 weekly_performance_snapshots
+    rebalance_alerts = []
+    was_auto_rebalanced = False
+    try:
+        snapshots = (
+            client.table("weekly_performance_snapshots")
+            .select("week_start, subject_scores")
+            .eq("user_id", str(user_id))
+            .order("week_start", desc=True)
+            .limit(2)
+            .execute()
+        )
+        snaps = snapshots.data or []
+        if len(snaps) >= 2:
+            this_week = snaps[0].get("subject_scores") or {}
+            last_week = snaps[1].get("subject_scores") or {}
+            for subject, curr_score in this_week.items():
+                prev_score = last_week.get(subject)
+                if prev_score and prev_score > 0:
+                    dip_pct = round((prev_score - curr_score) / prev_score * 100, 1)
+                    if dip_pct >= 10:
+                        rebalance_alerts.append({
+                            "subject": subject,
+                            "current_retention": round(curr_score, 1),
+                            "prev_retention": round(prev_score, 1),
+                            "dip_pct": dip_pct,
+                        })
+
+        # Auto-rebalance if significant dips and plan hasn't been rebalanced recently
+        if rebalance_alerts:
+            active_plan = (
+                client.table("study_plans")
+                .select("id, last_rebalanced_at")
+                .eq("user_id", str(user_id))
+                .eq("status", "active")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if active_plan.data:
+                plan_row = active_plan.data[0]
+                last_rebalanced = plan_row.get("last_rebalanced_at")
+                should_rebalance = True
+                if last_rebalanced:
+                    try:
+                        last_date = date.fromisoformat(last_rebalanced[:10])
+                        should_rebalance = (date.today() - last_date).days >= 7
+                    except (ValueError, TypeError):
+                        pass
+                if should_rebalance:
+                    await rebalance_plan(user_id=user_id, reason="auto_retention_dip")
+                    was_auto_rebalanced = True
+                    # Refresh plan after rebalance
+                    result = ms(
+                        client.table("daily_study_plans")
+                        .select("*")
+                        .eq("user_id", str(user_id))
+                        .eq("plan_date", today)
+                    )
+    except Exception as e:
+        logger.warning("Rebalance detection failed: %s", e)
+
+    return {
+        "plan": result.data,
+        "completion_percent": result.data.get("completion_percent", 0),
+        "rebalance_alerts": rebalance_alerts,
+        "was_auto_rebalanced": was_auto_rebalanced,
+    }
 
 
 @router.get("/week")

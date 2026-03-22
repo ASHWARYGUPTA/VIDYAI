@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BookOpen, Brain, Calendar, BarChart2, FileText, Home, LogOut, Settings, Video,
+  BookOpen, Brain, Calendar, BarChart2, FileText, Home, LogOut, Video, Network, GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -15,6 +15,8 @@ const NAV_ITEMS = [
   { href: "/dashboard/tutor", label: "AI Tutor", icon: Brain },
   { href: "/dashboard/revision", label: "Revision", icon: BookOpen },
   { href: "/dashboard/planner", label: "Planner", icon: Calendar },
+  { href: "/dashboard/curriculum", label: "Curriculum", icon: GraduationCap },
+  { href: "/dashboard/graph", label: "Knowledge Graph", icon: Network },
   { href: "/dashboard/tests", label: "Tests", icon: FileText },
   { href: "/dashboard/progress", label: "Progress", icon: BarChart2 },
   { href: "/dashboard/content", label: "Content", icon: Video },

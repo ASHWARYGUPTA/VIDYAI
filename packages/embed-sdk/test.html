@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VidyAI Embed SDK — Test Page</title>
+    <style>
+      body {
+        font-family: -apple-system, sans-serif;
+        margin: 0;
+        padding: 32px;
+        background: #f9fafb;
+      }
+      h1 {
+        color: #6366f1;
+      }
+      .section {
+        background: #fff;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        color: #6b7280;
+        margin-bottom: 4px;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      button {
+        padding: 10px 20px;
+        background: #6366f1;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button:hover {
+        background: #4f46e5;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 13px;
+        color: #6b7280;
+      }
+      .widget-host {
+        min-height: 200px;
+        border: 2px dashed #e5e7eb;
+        border-radius: 8px;
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🎓 VidyAI Embed SDK — Test Page</h1>
+    <p style="color: #6b7280">
+      This page simulates a partner website. Paste an embed token below (get it
+      from your backend via
+      <code>POST /api/v1/embed/session</code>).
+    </p>
+
+    <div class="section">
+      <h2>Step 1 — Initialize SDK</h2>
+      <label>Embed Token (et_...)</label>
+      <input id="token-input" type="text" placeholder="et_xxxx..." />
+      <br /><br />
+      <label>API URL (default: http://localhost:8000)</label>
+      <input id="api-url-input" type="text" value="http://localhost:8000" />
+      <br /><br />
+      <label>Theme</label>
+      <select id="theme-select">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <br /><br />
+      <button onclick="initSDK()">Init VidyAI SDK</button>
+      <div id="status"></div>
+    </div>
+
+    <div class="section">
+      <h2>Step 2 — Mount Widgets</h2>
+      <button onclick="mountTutor()" style="margin-right: 8px">
+        🎓 Floating Tutor
+      </button>
+      <button onclick="mountTutorInline()" style="margin-right: 8px">
+        🎓 Inline Tutor
+      </button>
+      <button onclick="mountPlanner()" style="margin-right: 8px">
+        📅 Planner
+      </button>
+      <button onclick="mountGraph()" style="margin-right: 8px">🧠 Graph</button>
+      <button onclick="mountKnowledge()" style="margin-right: 8px">
+        📚 Knowledge
+      </button>
+      <button onclick="mountContent()">🎥 Content</button>
+    </div>
+
+    <div class="section">
+      <h2>Inline Tutor</h2>
+      <div
+        class="widget-host"
+        id="tutor-inline-host"
+        style="height: 480px"
+      ></div>
+    </div>
+
+    <div class="section">
+      <h2>Study Planner</h2>
+      <div class="widget-host" id="planner-host"></div>
+    </div>
+
+    <div class="section">
+      <h2>Knowledge Graph</h2>
+      <div class="widget-host" id="graph-host"></div>
+    </div>
+
+    <div class="section">
+      <h2>Knowledge Search</h2>
+      <div class="widget-host" id="knowledge-host"></div>
+    </div>
+
+    <div class="section">
+      <h2>Content Processor</h2>
+      <div class="widget-host" id="content-host"></div>
+    </div>
+
+    <!-- Load built SDK -->
+    <script src="dist/embed.js"></script>
+    <script>
+      function setStatus(msg, ok = true) {
+        document.getElementById("status").style.color = ok
+          ? "#16a34a"
+          : "#dc2626";
+        document.getElementById("status").textContent = msg;
+      }
+
+      function initSDK() {
+        const token = document.getElementById("token-input").value.trim();
+        const apiUrl = document.getElementById("api-url-input").value.trim();
+        const theme = document.getElementById("theme-select").value;
+        if (!token) {
+          setStatus("❌ Enter an embed token first.", false);
+          return;
+        }
+        try {
+          VidyAI.init({ embedToken: token, apiUrl, theme });
+          setStatus("✅ SDK initialized. Mount a widget below.");
+        } catch (e) {
+          setStatus("❌ " + e.message, false);
+        }
+      }
+
+      function mountTutor() {
+        VidyAI.tutor();
+      }
+      function mountTutorInline() {
+        VidyAI.tutor({ selector: "#tutor-inline-host" });
+      }
+      function mountPlanner() {
+        VidyAI.planner({ selector: "#planner-host" });
+      }
+      function mountGraph() {
+        VidyAI.graph({ selector: "#graph-host" });
+      }
+      function mountKnowledge() {
+        VidyAI.knowledge({ selector: "#knowledge-host" });
+      }
+      function mountContent() {
+        VidyAI.content({ selector: "#content-host" });
+      }
+    </script>
+  </body>
+</html>

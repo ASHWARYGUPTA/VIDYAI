@@ -151,7 +151,7 @@ async def compute_fsrs_update(
     }).execute()
 
     # Update daily heatmap
-    _update_heatmap(user_id, xp)
+    _update_heatmap(user_id, xp, new_mastery_score)
 
     return {
         "next_review_date": next_review,
@@ -202,14 +202,19 @@ def _compute_priority(mastery_score: float, interval_days: int) -> float:
     return round(urgency * 100 + (1 / max(1, interval_days)) * 10, 4)
 
 
-def _update_heatmap(user_id: uuid.UUID, xp: int):
+def _update_heatmap(user_id: uuid.UUID, xp: int, mastery_score: float = 0.0):
     client = get_supabase_service_client()
     today = date.today().isoformat()
     existing = ms(client.table("daily_activity_heatmap").select("*").eq("user_id", str(user_id)).eq("activity_date", today))
     if existing.data:
+        prev_cards = (existing.data.get("cards_reviewed", 0) or 0)
+        prev_avg = float(existing.data.get("avg_retention_score", 0) or 0)
+        # Running average: (prev_avg * prev_count + new_score) / (prev_count + 1)
+        new_avg = round((prev_avg * prev_cards + mastery_score) / (prev_cards + 1), 3)
         client.table("daily_activity_heatmap").update({
-            "cards_reviewed": (existing.data.get("cards_reviewed", 0) or 0) + 1,
+            "cards_reviewed": prev_cards + 1,
             "xp_earned": (existing.data.get("xp_earned", 0) or 0) + xp,
+            "avg_retention_score": new_avg,
         }).eq("user_id", str(user_id)).eq("activity_date", today).execute()
     else:
         client.table("daily_activity_heatmap").insert({
@@ -217,4 +222,5 @@ def _update_heatmap(user_id: uuid.UUID, xp: int):
             "activity_date": today,
             "cards_reviewed": 1,
             "xp_earned": xp,
+            "avg_retention_score": round(mastery_score, 3),
         }).execute()

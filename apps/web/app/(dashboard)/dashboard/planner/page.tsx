@@ -1,6 +1,7 @@
 "use client";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, CheckCircle2 } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
 import { plannerApi } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
@@ -47,13 +48,31 @@ function SlotCard({ slot, onComplete }: { slot: Slot; onComplete: () => void }) 
   );
 }
 
+interface RebalanceAlert {
+  subject: string;
+  current_retention: number;
+  prev_retention: number;
+  dip_pct: number;
+}
+
 export default function PlannerPage() {
   const qc = useQueryClient();
+  const [alertsDismissed, setAlertsDismissed] = useState(false);
 
   const { data: today, isLoading: todayLoading } = useQuery({
     queryKey: ["plan-today"],
     queryFn: () => plannerApi.today(),
   });
+
+  const rebalanceAlerts: RebalanceAlert[] = (today as { rebalance_alerts?: RebalanceAlert[] })?.rebalance_alerts ?? [];
+  const wasAutoRebalanced = (today as { was_auto_rebalanced?: boolean })?.was_auto_rebalanced ?? false;
+
+  // Show toast when auto-rebalanced
+  useEffect(() => {
+    if (wasAutoRebalanced) {
+      toast.success("Plan auto-updated based on retention dips", { duration: 4000 });
+    }
+  }, [wasAutoRebalanced]);
 
   const { data: week, isLoading: weekLoading } = useQuery({
     queryKey: ["plan-week"],
@@ -102,6 +121,45 @@ export default function PlannerPage() {
           Regenerate
         </Button>
       </div>
+
+      {/* Rebalancing alert banner */}
+      {rebalanceAlerts.length > 0 && !alertsDismissed && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                  {wasAutoRebalanced ? "Plan rebalanced — retention dips detected" : "Retention dips detected"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {rebalanceAlerts.map((alert) => (
+                    <Badge
+                      key={alert.subject}
+                      variant="outline"
+                      className={`text-xs ${alert.dip_pct >= 15 ? "border-red-400 text-red-700 dark:text-red-400" : "border-amber-400 text-amber-700 dark:text-amber-400"}`}
+                    >
+                      {alert.subject} −{alert.dip_pct}%
+                      <span className="text-muted-foreground ml-1">({Math.round(alert.prev_retention)}→{Math.round(alert.current_retention)})</span>
+                    </Badge>
+                  ))}
+                </div>
+                {wasAutoRebalanced && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">Revision slots have been added for weak subjects.</p>
+                )}
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 text-amber-600 hover:text-amber-800 hover:bg-amber-100"
+              onClick={() => setAlertsDismissed(true)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Tabs defaultValue="today">
         <TabsList>

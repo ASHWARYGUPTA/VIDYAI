@@ -1,4 +1,5 @@
 import uuid
+import math
 import logging
 from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException, Query, status
@@ -63,7 +64,7 @@ async def get_knowledge_graph(
     client = get_supabase_service_client()
     query = (
         client.table("learner_concept_states")
-        .select("*, concepts(name, subject_id, chapter_id, difficulty_level)")
+        .select("*, concepts(name, subject_id, chapter_id, difficulty_level, subjects(name))")
         .eq("user_id", str(user_id))
     )
     if subject_id:
@@ -79,7 +80,115 @@ async def get_knowledge_graph(
         "unseen": sum(1 for c in data if c["mastery_state"] == "unseen"),
         "forgotten": sum(1 for c in data if c["mastery_state"] == "forgotten"),
     }
-    return {"concepts": data, "summary": summary}
+
+    # Compute per-subject retention index (avg mastery_score × 100, 0-100)
+    subject_scores: dict[str, list[float]] = {}
+    subject_names: dict[str, str] = {}
+    for c in data:
+        concept = c.get("concepts") or {}
+        sid = concept.get("subject_id")
+        if not sid:
+            continue
+        sname = (concept.get("subjects") or {}).get("name", sid)
+        subject_names[sid] = sname
+        subject_scores.setdefault(sid, []).append(float(c.get("mastery_score") or 0))
+
+    subject_retention_index = [
+        {
+            "subject_id": sid,
+            "subject_name": subject_names[sid],
+            "retention_index": round(sum(scores) / len(scores) * 100, 1),
+            "concept_count": len(scores),
+        }
+        for sid, scores in subject_scores.items()
+    ]
+
+    return {"concepts": data, "summary": summary, "subject_retention_index": subject_retention_index}
+
+
+@router.get("/forgetting-curve")
+async def get_forgetting_curve(
+    user_id: CurrentUserID,
+    days: int = Query(default=30, le=90),
+    concept_id: uuid.UUID | None = Query(default=None),
+):
+    """
+    Returns a time-series of estimated average retention (0-100) over the past N days,
+    using Ebbinghaus decay: R(t) = e^(-t/S) between reviews, where S is FSRS stability.
+    Also returns the earliest upcoming review date.
+    """
+    client = get_supabase_service_client()
+    since = (date.today() - timedelta(days=days)).isoformat()
+
+    # Fetch all active concept states for this user (with stability)
+    states_query = (
+        client.table("learner_concept_states")
+        .select("concept_id, mastery_score, stability, last_reviewed_at, next_review_date")
+        .eq("user_id", str(user_id))
+        .neq("mastery_state", "unseen")
+    )
+    if concept_id:
+        states_query = states_query.eq("concept_id", str(concept_id))
+    states_result = states_query.execute()
+    states = states_result.data or []
+
+    if not states:
+        return {"curve": [], "next_review_due": None, "current_avg_retention": 0}
+
+    # Build daily retention estimates for each day in the range
+    today = date.today()
+    curve = []
+    for day_offset in range(days + 1):
+        target_date = today - timedelta(days=days - day_offset)
+        target_iso = target_date.isoformat()
+
+        daily_retentions = []
+        for s in states:
+            last_reviewed = s.get("last_reviewed_at")
+            stability = float(s.get("stability") or 1.0)
+            if not last_reviewed:
+                continue
+            # Days since last review relative to target_date
+            try:
+                last_date = date.fromisoformat(last_reviewed[:10])
+            except (ValueError, TypeError):
+                continue
+            t = (target_date - last_date).days
+            if t < 0:
+                # Not yet reviewed at this point in time
+                continue
+            # Ebbinghaus: R(t) = e^(-t/S), clamped to [0,1]
+            r = math.exp(-t / max(stability, 0.1))
+            daily_retentions.append(r)
+
+        avg_retention = round(sum(daily_retentions) / len(daily_retentions) * 100, 1) if daily_retentions else None
+        curve.append({"date": target_iso, "avg_retention": avg_retention})
+
+    # Earliest next review date
+    next_due_dates = [s["next_review_date"] for s in states if s.get("next_review_date")]
+    next_review_due = min(next_due_dates) if next_due_dates else None
+
+    # Current retention (today)
+    current_retentions = []
+    for s in states:
+        last_reviewed = s.get("last_reviewed_at")
+        stability = float(s.get("stability") or 1.0)
+        if not last_reviewed:
+            continue
+        try:
+            last_date = date.fromisoformat(last_reviewed[:10])
+        except (ValueError, TypeError):
+            continue
+        t = (today - last_date).days
+        r = math.exp(-t / max(stability, 0.1))
+        current_retentions.append(r)
+    current_avg = round(sum(current_retentions) / len(current_retentions) * 100, 1) if current_retentions else 0
+
+    return {
+        "curve": curve,
+        "next_review_due": next_review_due,
+        "current_avg_retention": current_avg,
+    }
 
 
 @router.get("/weak-areas")

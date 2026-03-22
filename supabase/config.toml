@@ -13,6 +13,9 @@ port = 54322
 shadow_port = 54320
 major_version = 15
 
+[db.seed]
+sql_paths = ["./seed/01_subjects.sql", "./seed/02_jee_syllabus.sql", "./seed/03_demo_data.sql"]
+
 [db.pooler]
 enabled = false
 

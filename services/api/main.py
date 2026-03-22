@@ -1,13 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import sentry_sdk
 
 from .config import get_settings
-from .routers import auth, tutor, retention, planner, mcq, content, progress, syllabus, notifications, partner, mcp as mcp_router, knowledge, pdf_tests
-from .middleware import RateLimitMiddleware, PartnerKeyMiddleware
+from .routers import auth, tutor, retention, planner, mcq, content, progress, syllabus, notifications, partner, mcp as mcp_router, knowledge, pdf_tests, embed
+from .middleware import RateLimitMiddleware, PartnerKeyMiddleware, DynamicCORSMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +32,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["https://vidyai.in", "http://localhost:3000"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Dynamic CORS: vidyai.in + all partner-registered domains (refreshed every 5 min)
+    app.add_middleware(DynamicCORSMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(PartnerKeyMiddleware)
 
@@ -55,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(partner.router, prefix="/api/v1/partner", tags=["partner"])
     app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
     app.include_router(pdf_tests.router, prefix="/api/v1/tests", tags=["tests"])
+    app.include_router(embed.router, prefix="/api/v1/embed", tags=["embed"])
     app.include_router(mcp_router.router, tags=["mcp"])
 
     @app.exception_handler(Exception)

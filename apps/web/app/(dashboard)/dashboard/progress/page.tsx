@@ -10,14 +10,21 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 
-const HEATMAP_COLORS = ["bg-primary/10", "bg-primary/25", "bg-primary/50", "bg-primary/75", "bg-primary"];
+// Retention score bands: 0=no activity, 0-0.25=critical, 0.25-0.5=weak, 0.5-0.75=moderate, 0.75+=strong
+function retentionClass(score: number, hasActivity: boolean) {
+  if (!hasActivity) return "bg-muted";
+  if (score >= 0.75) return "bg-green-500";
+  if (score >= 0.50) return "bg-yellow-400";
+  if (score >= 0.25) return "bg-orange-400";
+  return "bg-red-400";
+}
 
-function intensityClass(xp: number) {
-  if (xp === 0) return HEATMAP_COLORS[0];
-  if (xp < 100) return HEATMAP_COLORS[1];
-  if (xp < 250) return HEATMAP_COLORS[2];
-  if (xp < 500) return HEATMAP_COLORS[3];
-  return HEATMAP_COLORS[4];
+function retentionLabel(score: number, hasActivity: boolean) {
+  if (!hasActivity) return "No activity";
+  if (score >= 0.75) return "Strong";
+  if (score >= 0.50) return "Moderate";
+  if (score >= 0.25) return "Weak";
+  return "Critical";
 }
 
 export default function ProgressPage() {
@@ -159,25 +166,40 @@ export default function ProgressPage() {
 
         <TabsContent value="heatmap" className="mt-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">Activity Heatmap</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">Retention Heatmap</CardTitle>
+              <p className="text-xs text-muted-foreground">Color = avg retention score on that day</p>
+            </CardHeader>
             <CardContent>
               {heatLoading ? <Skeleton className="h-32" /> : (
                 <div className="overflow-x-auto">
                   <div className="flex gap-1 flex-wrap">
-                    {((heatmap?.days ?? []) as { date: string; xp_earned: number; study_minutes: number }[]).map((day) => (
-                      <div
-                        key={day.date}
-                        title={`${day.date}: ${day.xp_earned} XP, ${day.study_minutes}m`}
-                        className={`h-4 w-4 rounded-sm ${intensityClass(day.xp_earned)}`}
-                      />
-                    ))}
+                    {((heatmap?.days ?? []) as { activity_date: string; xp_earned: number; study_minutes: number; cards_reviewed: number; avg_retention_score: number }[]).map((day) => {
+                      const hasActivity = (day.xp_earned ?? 0) > 0 || (day.cards_reviewed ?? 0) > 0;
+                      const score = day.avg_retention_score ?? 0;
+                      return (
+                        <div
+                          key={day.activity_date}
+                          title={`${day.activity_date}: ${retentionLabel(score, hasActivity)} (${Math.round(score * 100)}% retention) · ${day.xp_earned ?? 0} XP · ${day.study_minutes ?? 0}m`}
+                          className={`h-4 w-4 rounded-sm cursor-default ${retentionClass(score, hasActivity)}`}
+                        />
+                      );
+                    })}
                   </div>
-                  <div className="flex items-center gap-1 mt-3 text-xs text-muted-foreground">
-                    <span>Less</span>
-                    {HEATMAP_COLORS.map((c, i) => (
-                      <div key={i} className={`h-3 w-3 rounded-sm ${c}`} />
+                  <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground flex-wrap">
+                    <span>Retention:</span>
+                    {[
+                      { cls: "bg-muted", label: "No activity" },
+                      { cls: "bg-red-400", label: "Critical (<25%)" },
+                      { cls: "bg-orange-400", label: "Weak (25–50%)" },
+                      { cls: "bg-yellow-400", label: "Moderate (50–75%)" },
+                      { cls: "bg-green-500", label: "Strong (75%+)" },
+                    ].map(({ cls, label }) => (
+                      <div key={label} className="flex items-center gap-1">
+                        <div className={`h-3 w-3 rounded-sm ${cls}`} />
+                        <span>{label}</span>
+                      </div>
                     ))}
-                    <span>More</span>
                   </div>
                 </div>
               )}

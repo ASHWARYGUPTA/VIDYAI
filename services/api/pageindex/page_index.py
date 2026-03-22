@@ -71,32 +71,70 @@ async def check_title_appearance_in_start(title, page_text, model=None, logger=N
     return response.get("start_begin", "no")
 
 
+async def check_title_appearance_in_start_batch(items_with_pages, model=None, logger=None):
+    """Check if multiple section titles start at the beginning of their pages in one LLM call."""
+    entries = ""
+    for i, (title, page_text) in enumerate(items_with_pages):
+        truncated = page_text[:500] if len(page_text) > 500 else page_text
+        entries += f"\n--- ITEM {i} ---\nSection title: {title}\nPage text start: {truncated}\n"
+
+    prompt = f"""For each item, check if the section title is the first content on the page (starts at the beginning).
+If other content appears before the section title, answer "no".
+
+{entries}
+
+Return a JSON array:
+[{{"item": <number>, "start_begin": "yes" or "no"}}]
+Directly return the JSON array only."""
+
+    response = await llm_acompletion(model=model, prompt=prompt)
+    parsed = extract_json(response)
+    result_map = {}
+    if isinstance(parsed, list):
+        for r in parsed:
+            result_map[r.get('item')] = r.get('start_begin', 'no')
+    return [result_map.get(i, 'no') for i in range(len(items_with_pages))]
+
+
 async def check_title_appearance_in_start_concurrent(structure, page_list, model=None, logger=None):
     if logger:
-        logger.info("Checking title appearance in start concurrently")
-    
+        logger.info("Checking title appearance in start concurrently (batched)")
+
     # skip items without physical_index
     for item in structure:
         if item.get('physical_index') is None:
             item['appear_start'] = 'no'
 
-    # only for items with valid physical_index
-    tasks = []
+    # collect valid items
     valid_items = []
+    valid_pairs = []  # (title, page_text)
     for item in structure:
         if item.get('physical_index') is not None:
-            page_text = page_list[item['physical_index'] - 1][0]
-            tasks.append(check_title_appearance_in_start(item['title'], page_text, model=model, logger=logger))
-            valid_items.append(item)
+            page_idx = item['physical_index'] - 1
+            if 0 <= page_idx < len(page_list):
+                valid_items.append(item)
+                valid_pairs.append((item['title'], page_list[page_idx][0]))
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for item, result in zip(valid_items, results):
-        if isinstance(result, Exception):
+    if not valid_pairs:
+        return structure
+
+    # Batch — 5 items per LLM call
+    batch_size = 5
+    all_results = []
+    batches = [valid_pairs[i:i+batch_size] for i in range(0, len(valid_pairs), batch_size)]
+    tasks = [check_title_appearance_in_start_batch(batch, model=model, logger=logger) for batch in batches]
+    batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for br in batch_results:
+        if isinstance(br, Exception):
             if logger:
-                logger.error(f"Error checking start for {item['title']}: {result}")
-            item['appear_start'] = 'no'
+                logger.error(f"Batch check error: {br}")
+            all_results.extend(['no'] * batch_size)
         else:
-            item['appear_start'] = result
+            all_results.extend(br)
+
+    for item, result in zip(valid_items, all_results):
+        item['appear_start'] = result
 
     return structure
 
@@ -118,8 +156,57 @@ def toc_detector_single_page(content, model=None):
 
     response = llm_completion(model=model, prompt=prompt)
     # print('response', response)
-    json_content = extract_json(response)    
+    json_content = extract_json(response)
     return json_content.get('toc_detected', 'no')
+
+
+def toc_detector_batch(pages, page_indices, model=None):
+    """Detect TOC presence across multiple pages in a single LLM call.
+
+    Args:
+        pages: list of page text strings
+        page_indices: list of corresponding page indices
+        model: LLM model to use
+
+    Returns:
+        dict mapping page_index -> 'yes' or 'no'
+    """
+    labeled_pages = ""
+    for idx, text in zip(page_indices, pages):
+        # Truncate each page to ~800 chars to fit more pages per call
+        truncated = text[:800] if len(text) > 800 else text
+        labeled_pages += f"\n--- PAGE {idx} ---\n{truncated}\n"
+
+    prompt = f"""Your job is to detect which of the following pages contain a Table of Contents (TOC).
+
+Note: abstract, summary, notation list, figure list, table list, etc. are NOT table of contents.
+
+{labeled_pages}
+
+Return a JSON array with one entry per page:
+[
+    {{"page": <page number>, "toc_detected": "yes" or "no"}}
+]
+
+Directly return the JSON array. Do not output anything else."""
+
+    response = llm_completion(model=model, prompt=prompt)
+    results = extract_json(response)
+
+    result_map = {}
+    if isinstance(results, list):
+        for item in results:
+            pg = item.get('page')
+            detected = item.get('toc_detected', 'no')
+            if pg is not None:
+                result_map[int(pg)] = detected
+
+    # Fill in any missing pages as 'no'
+    for idx in page_indices:
+        if idx not in result_map:
+            result_map[idx] = 'no'
+
+    return result_map
 
 
 def check_if_toc_extraction_is_complete(content, toc, model=None):
@@ -340,29 +427,48 @@ def toc_transformer(toc_content, model=None):
 
 def find_toc_pages(start_page_index, page_list, opt, logger=None):
     print('start find_toc_pages')
-    last_page_is_yes = False
     toc_page_list = []
+    batch_size = 5  # pages per LLM call
     i = start_page_index
-    
+    max_check = min(len(page_list), opt.toc_check_page_num)
+    found_toc = False
+
     while i < len(page_list):
-        # Only check beyond max_pages if we're still finding TOC pages
-        if i >= opt.toc_check_page_num and not last_page_is_yes:
+        # Stop scanning if we're past the max check window and haven't found TOC recently
+        if i >= max_check and not found_toc:
             break
-        detected_result = toc_detector_single_page(page_list[i][0],model=opt.model)
-        if detected_result == 'yes':
-            if logger:
-                logger.info(f'Page {i} has toc')
-            toc_page_list.append(i)
-            last_page_is_yes = True
-        elif detected_result == 'no' and last_page_is_yes:
-            if logger:
-                logger.info(f'Found the last page with toc: {i-1}')
-            break
-        i += 1
-    
+
+        # Build a batch of pages
+        batch_end = min(i + batch_size, len(page_list))
+        batch_pages = [page_list[j][0] for j in range(i, batch_end)]
+        batch_indices = list(range(i, batch_end))
+
+        result_map = toc_detector_batch(batch_pages, batch_indices, model=opt.model)
+        if logger:
+            logger.info(f'TOC batch check pages {i}-{batch_end-1}: {result_map}')
+
+        # Process results in order
+        batch_had_toc = False
+        for j in batch_indices:
+            if result_map.get(j) == 'yes':
+                toc_page_list.append(j)
+                found_toc = True
+                batch_had_toc = True
+            elif found_toc and result_map.get(j) == 'no':
+                # TOC ended — stop
+                if logger:
+                    logger.info(f'Found the last page with toc: {j-1}')
+                return toc_page_list
+
+        # If this batch had no TOC and we already found some, stop
+        if found_toc and not batch_had_toc:
+            return toc_page_list
+
+        i = batch_end
+
     if not toc_page_list and logger:
         logger.info('No toc found')
-        
+
     return toc_page_list
 
 def remove_page_number(data):
@@ -897,6 +1003,51 @@ async def fix_incorrect_toc_with_retries(toc_with_page_number, page_list, incorr
 
 
 ################### verify toc #########################################################
+async def verify_toc_batch(items_with_pages, model=None):
+    """Verify multiple TOC items in a single LLM call.
+
+    Args:
+        items_with_pages: list of dicts with 'list_index', 'title', 'page_number', 'page_text'
+        model: LLM model
+
+    Returns:
+        list of dicts with 'list_index', 'answer', 'title', 'page_number'
+    """
+    entries = ""
+    for i, item in enumerate(items_with_pages):
+        truncated_text = item['page_text'][:600] if len(item['page_text']) > 600 else item['page_text']
+        entries += f"\n--- ITEM {i} ---\nSection title: {item['title']}\nPage text: {truncated_text}\n"
+
+    prompt = f"""Your job is to check if each given section title appears or starts in its corresponding page text.
+Do fuzzy matching, ignore space inconsistencies.
+
+{entries}
+
+Return a JSON array:
+[
+    {{"item": <item number>, "answer": "yes" or "no"}}
+]
+Directly return the JSON array. Do not output anything else."""
+
+    response = await llm_acompletion(model=model, prompt=prompt)
+    parsed = extract_json(response)
+
+    results = []
+    result_map = {}
+    if isinstance(parsed, list):
+        for r in parsed:
+            result_map[r.get('item')] = r.get('answer', 'no')
+
+    for i, item in enumerate(items_with_pages):
+        results.append({
+            'list_index': item['list_index'],
+            'answer': result_map.get(i, 'no'),
+            'title': item['title'],
+            'page_number': item['page_number'],
+        })
+    return results
+
+
 async def verify_toc(page_list, list_result, start_index=1, N=None, model=None):
     print('start verify_toc')
     # Find the last non-None physical_index
@@ -905,15 +1056,21 @@ async def verify_toc(page_list, list_result, start_index=1, N=None, model=None):
         if item.get('physical_index') is not None:
             last_physical_index = item['physical_index']
             break
-    
+
     # Early return if we don't have valid physical indices
     if last_physical_index is None or last_physical_index < len(page_list)/2:
         return 0, []
-    
-    # Determine which items to check
+
+    # Determine which items to check — sample at most 10 to save LLM calls
+    max_sample = 10
     if N is None:
-        print('check all items')
-        sample_indices = range(0, len(list_result))
+        if len(list_result) > max_sample:
+            N = max_sample
+            print(f'sampling {N} items from {len(list_result)}')
+            sample_indices = random.sample(range(0, len(list_result)), N)
+        else:
+            print('check all items')
+            sample_indices = range(0, len(list_result))
     else:
         N = min(N, len(list_result))
         print(f'check {N} items')
@@ -923,30 +1080,40 @@ async def verify_toc(page_list, list_result, start_index=1, N=None, model=None):
     indexed_sample_list = []
     for idx in sample_indices:
         item = list_result[idx]
-        # Skip items with None physical_index (these were invalidated by validate_and_truncate_physical_indices)
         if item.get('physical_index') is not None:
-            item_with_index = item.copy()
-            item_with_index['list_index'] = idx  # Add the original index in list_result
-            indexed_sample_list.append(item_with_index)
+            page_number = item['physical_index']
+            page_idx = page_number - start_index
+            if 0 <= page_idx < len(page_list):
+                indexed_sample_list.append({
+                    'list_index': idx,
+                    'title': item['title'],
+                    'page_number': page_number,
+                    'page_text': page_list[page_idx][0],
+                })
 
-    # Run checks concurrently
-    tasks = [
-        check_title_appearance(item, page_list, start_index, model)
-        for item in indexed_sample_list
-    ]
-    results = await asyncio.gather(*tasks)
-    
+    if not indexed_sample_list:
+        return 0, []
+
+    # Batch verify — 5 items per LLM call
+    batch_size = 5
+    all_results = []
+    batches = [indexed_sample_list[i:i+batch_size] for i in range(0, len(indexed_sample_list), batch_size)]
+    batch_tasks = [verify_toc_batch(batch, model=model) for batch in batches]
+    batch_results = await asyncio.gather(*batch_tasks)
+    for br in batch_results:
+        all_results.extend(br)
+
     # Process results
     correct_count = 0
     incorrect_results = []
-    for result in results:
+    for result in all_results:
         if result['answer'] == 'yes':
             correct_count += 1
         else:
             incorrect_results.append(result)
-    
+
     # Calculate accuracy
-    checked_count = len(results)
+    checked_count = len(all_results)
     accuracy = correct_count / checked_count if checked_count > 0 else 0
     print(f"accuracy: {accuracy*100:.2f}%")
     return accuracy, incorrect_results
@@ -1063,11 +1230,155 @@ async def tree_parser(page_list, opt, doc=None, logger=None):
     return toc_tree
 
 
+def _fast_page_index(doc, page_list, opt, logger):
+    """
+    Fast-path page indexer: generates the full document tree in 1-2 LLM calls
+    instead of the 10+ call pipeline.  Designed for rate-limited / free-tier models.
+
+    Call 1: Send all pages (truncated) → get full hierarchical structure as JSON
+    Call 2: (optional) Generate summaries + doc description in a single call
+    """
+    total_pages = len(page_list)
+    llm_calls = 0
+    print(f'[fast-pageindex] Starting for {total_pages} pages (max 2 LLM calls)')
+
+    # ── Call 1: Structure extraction ──────────────────────────────────────
+    pages_text = ""
+    char_budget_per_page = max(200, min(1200, 60000 // max(total_pages, 1)))
+    for i, (text, _tokens) in enumerate(page_list):
+        truncated = text[:char_budget_per_page] if len(text) > char_budget_per_page else text
+        pages_text += f"<page_{i+1}>\n{truncated}\n</page_{i+1}>\n"
+
+    structure_prompt = f"""You are an expert document analyst. Given the following PDF pages, generate a hierarchical table of contents as a JSON array.
+
+Rules:
+- "structure" is a dotted numeric index (e.g. "1", "1.1", "1.2", "2")
+- "title" is the section heading extracted from the text
+- "physical_index" is the 1-based page number where the section starts
+- Include ALL major sections and subsections you can identify
+- If the document starts with content before any heading, add a "Preface" entry at physical_index 1
+
+Document pages:
+{pages_text}
+
+Return ONLY a JSON array:
+[
+    {{"structure": "1", "title": "Section Title", "physical_index": 1}},
+    {{"structure": "1.1", "title": "Subsection", "physical_index": 2}},
+    ...
+]"""
+
+    print('[fast-pageindex] LLM call 1/2: extracting structure...')
+    response = llm_completion(model=opt.model, prompt=structure_prompt)
+    llm_calls += 1
+    print(f'[fast-pageindex] LLM call 1 done.')
+    flat_structure = extract_json(response)
+
+    if not isinstance(flat_structure, list) or len(flat_structure) == 0:
+        # Fallback: single node covering entire document
+        print('[fast] LLM returned empty structure, using single-node fallback')
+        flat_structure = [{"structure": "1", "title": get_pdf_name(doc), "physical_index": 1}]
+
+    # Validate indices
+    for item in flat_structure:
+        pi = item.get('physical_index')
+        if pi is not None:
+            pi = int(pi) if isinstance(pi, (int, float, str)) and str(pi).isdigit() else None
+            item['physical_index'] = pi
+        if pi is None or pi < 1 or pi > total_pages:
+            item['physical_index'] = None
+
+    flat_structure = [item for item in flat_structure if item.get('physical_index') is not None]
+
+    if not flat_structure:
+        flat_structure = [{"structure": "1", "title": get_pdf_name(doc), "physical_index": 1}]
+
+    # Add appear_start heuristic without LLM: if title text appears in first 200 chars of page
+    for item in flat_structure:
+        pi = item['physical_index']
+        page_text_start = page_list[pi - 1][0][:200].lower() if pi <= total_pages else ""
+        title_lower = item.get('title', '').lower().strip()
+        # Fuzzy: check if most words of title appear in page start
+        title_words = [w for w in title_lower.split() if len(w) > 2]
+        if title_words:
+            matches = sum(1 for w in title_words if w in page_text_start)
+            item['appear_start'] = 'yes' if matches >= len(title_words) * 0.5 else 'no'
+        else:
+            item['appear_start'] = 'no'
+
+    # Build tree
+    tree = post_processing(flat_structure, total_pages)
+    if not tree:
+        tree = flat_structure
+
+    # Add node IDs
+    if opt.if_add_node_id == 'yes':
+        write_node_id(tree)
+
+    # Add text to nodes (needed for summaries)
+    add_node_text(tree, page_list)
+
+    # ── Call 2: Summaries + doc description in one call ──────────────────
+    if opt.if_add_node_summary == 'yes':
+        nodes = structure_to_list(tree)
+
+        # Build a compact representation for summary generation
+        nodes_for_summary = ""
+        for i, node in enumerate(nodes):
+            text_snippet = (node.get('text') or '')[:500]
+            nodes_for_summary += f"\n[Node {i}] Title: {node.get('title', 'Untitled')}\nText: {text_snippet}\n"
+
+        summary_prompt = f"""You are given sections of a document. For each node, write a 1-2 sentence summary of its content.
+Also write a one-sentence description for the entire document.
+
+{nodes_for_summary}
+
+Return JSON:
+{{
+    "doc_description": "One sentence describing the whole document",
+    "summaries": ["summary for node 0", "summary for node 1", ...]
+}}
+Return ONLY the JSON."""
+
+        print('[fast-pageindex] LLM call 2/2: generating summaries...')
+        summary_response = llm_completion(model=opt.model, prompt=summary_prompt)
+        llm_calls += 1
+        print(f'[fast-pageindex] LLM call 2 done.')
+
+        summary_data = extract_json(summary_response)
+        summaries = summary_data.get('summaries', []) if isinstance(summary_data, dict) else []
+        doc_description = summary_data.get('doc_description', '') if isinstance(summary_data, dict) else ''
+
+        for i, node in enumerate(nodes):
+            node['summary'] = summaries[i] if i < len(summaries) else node.get('title', '')
+
+        # Remove text if not requested
+        if opt.if_add_node_text == 'no':
+            remove_structure_text(tree)
+
+        print(f'[fast-pageindex] COMPLETED — {llm_calls} LLM calls total, {len(nodes)} nodes generated')
+        return {
+            'doc_name': get_pdf_name(doc),
+            'doc_description': doc_description,
+            'structure': tree,
+        }
+
+    # Remove text if not requested
+    if opt.if_add_node_text == 'no':
+        remove_structure_text(tree)
+
+    print(f'[fast-pageindex] COMPLETED — {llm_calls} LLM call(s) total (no summaries requested)')
+    return {
+        'doc_name': get_pdf_name(doc),
+        'structure': tree,
+    }
+
+
 def page_index_main(doc, opt=None):
     logger = JsonLogger(doc)
-    
+
     is_valid_pdf = (
-        (isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".pdf")) or 
+        (isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".pdf")) or
         isinstance(doc, BytesIO)
     )
     if not is_valid_pdf:
@@ -1079,33 +1390,10 @@ def page_index_main(doc, opt=None):
     logger.info({'total_page_number': len(page_list)})
     logger.info({'total_token': sum([(page[1] or 0) for page in page_list])})
 
-    async def page_index_builder():
-        structure = await tree_parser(page_list, opt, doc=doc, logger=logger)
-        if opt.if_add_node_id == 'yes':
-            write_node_id(structure)    
-        if opt.if_add_node_text == 'yes':
-            add_node_text(structure, page_list)
-        if opt.if_add_node_summary == 'yes':
-            if opt.if_add_node_text == 'no':
-                add_node_text(structure, page_list)
-            await generate_summaries_for_structure(structure, model=opt.model)
-            if opt.if_add_node_text == 'no':
-                remove_structure_text(structure)
-            if opt.if_add_doc_description == 'yes':
-                # Create a clean structure without unnecessary fields for description generation
-                clean_structure = create_clean_structure_for_description(structure)
-                doc_description = generate_doc_description(clean_structure, model=opt.model)
-                return {
-                    'doc_name': get_pdf_name(doc),
-                    'doc_description': doc_description,
-                    'structure': structure,
-                }
-        return {
-            'doc_name': get_pdf_name(doc),
-            'structure': structure,
-        }
-
-    return asyncio.run(page_index_builder())
+    # Use fast path (2 LLM calls) instead of the full pipeline (10+ calls)
+    result = _fast_page_index(doc, page_list, opt, logger)
+    print(f'[page_index_main] COMPLETED — no further LLM calls after this point')
+    return result
 
 
 def page_index(doc, model=None, toc_check_page_num=None, max_page_num_each_node=None, max_token_num_each_node=None,
