@@ -54,7 +54,7 @@ async def get_history(
 async def get_doubt(doubt_id: uuid.UUID, user_id: CurrentUserID):
     client = get_supabase_service_client()
     result = client.table("doubt_sessions").select("*").eq("id", str(doubt_id)).eq("user_id", str(user_id)).maybe_single().execute()
-    if not result.data:
+    if result is None or not result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "not_found", "code": "DOUBT_NOT_FOUND"})
     return {"doubt": result.data}
 

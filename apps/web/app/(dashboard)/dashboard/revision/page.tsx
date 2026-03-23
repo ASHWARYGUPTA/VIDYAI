@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, XCircle, RotateCcw, Flame, TrendingDown } from "lucide-react";
+import { CheckCircle, XCircle, RotateCcw, Flame, TrendingDown, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { retentionApi } from "@/lib/api/endpoints";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,6 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid,
 } from "recharts";
 
-// quality_score 1-5 mapping
 const RATINGS = [
   { value: 1, label: "Again", icon: XCircle, color: "text-red-500 border-red-200 hover:bg-red-50" },
   { value: 2, label: "Hard", icon: RotateCcw, color: "text-amber-500 border-amber-200 hover:bg-amber-50" },
@@ -60,7 +59,7 @@ export default function RevisionPage() {
     return (
       <div className="p-8 space-y-6">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full max-w-lg mx-auto" />
+        <Skeleton className="h-64 w-full max-w-lg mx-auto rounded-xl" />
       </div>
     );
   }
@@ -75,20 +74,22 @@ export default function RevisionPage() {
   if (!cards.length || currentIdx >= cards.length) {
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-        <div className="rounded-full bg-green-100 p-6 mb-4">
-          <CheckCircle className="h-12 w-12 text-green-600" />
+        <div className="rounded-2xl bg-gradient-to-br from-green-100 to-green-50 p-8 mb-4 shadow-lg shadow-green-500/10">
+          <CheckCircle className="h-14 w-14 text-green-500" />
         </div>
-        <h2 className="text-2xl font-bold mb-2">Session complete!</h2>
-        <p className="text-muted-foreground mb-6">You reviewed {done} cards today.</p>
-        <Button onClick={() => { setCurrentIdx(0); setSessionDone(0); qc.invalidateQueries({ queryKey: ["deck-today"] }); }}>
-          Start new session
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Session complete! 🎉</h2>
+        <p className="text-gray-500 mb-6">You reviewed {done} cards today.</p>
+        <Button
+          className="bg-gradient-to-r from-blue-600 to-blue-500 shadow-md shadow-blue-500/20"
+          onClick={() => { setCurrentIdx(0); setSessionDone(0); qc.invalidateQueries({ queryKey: ["deck-today"] }); }}
+        >
+          <Sparkles className="h-4 w-4 mr-2" /> Start new session
         </Button>
       </div>
     );
   }
 
   const card = cards[currentIdx];
-  // Supabase join returns the joined table as "concepts" (table name)
   const concept = (card as { concepts?: { name?: string; description?: string; key_formulas?: string; chapter?: { name?: string }; mastery_state?: string } }).concepts;
   const masteryState = (card as { mastery_state?: string }).mastery_state ?? "new";
   const conceptId = card.concept_id as string;
@@ -101,19 +102,19 @@ export default function RevisionPage() {
     <div className="p-8 max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Revision</h1>
-          <p className="text-sm text-muted-foreground">{remaining} cards remaining</p>
+          <h1 className="text-xl font-semibold text-gray-900">Revision</h1>
+          <p className="text-sm text-gray-500">{remaining} cards remaining</p>
         </div>
         {currentStreak > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 bg-orange-50 px-3 py-1.5 rounded-full">
             <Flame className="h-4 w-4 text-orange-500" />
-            <span className="text-sm font-medium">{currentStreak} day streak</span>
+            <span className="text-sm font-medium text-orange-700">{currentStreak} day streak</span>
           </div>
         )}
       </div>
 
       <Tabs defaultValue="flashcards">
-        <TabsList>
+        <TabsList className="bg-white border border-blue-100/60">
           <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
           <TabsTrigger value="curve">
             <TrendingDown className="h-3.5 w-3.5 mr-1" />
@@ -130,20 +131,20 @@ export default function RevisionPage() {
             onClick={() => setFlipped((f) => !f)}
           >
             <div className={`flashcard h-full ${flipped ? "flipped" : ""}`}>
-              <Card className="flashcard-front h-full flex flex-col items-center justify-center text-center p-8">
+              <Card className="flashcard-front h-full flex flex-col items-center justify-center text-center p-8 border-blue-100/60 shadow-lg shadow-blue-500/5 bg-white">
                 <Badge variant="outline" className={`mb-4 ${masteryColor(masteryState)}`}>
                   {masteryState}
                 </Badge>
-                <h2 className="text-2xl font-bold">{concept?.name ?? "Concept"}</h2>
-                <p className="text-sm text-muted-foreground mt-4">Tap to reveal</p>
+                <h2 className="text-2xl font-bold text-gray-900">{concept?.name ?? "Concept"}</h2>
+                <p className="text-sm text-gray-400 mt-4">Tap to reveal</p>
               </Card>
-              <Card className="flashcard-back h-full flex flex-col items-center justify-center text-center p-8">
-                <p className="text-xs text-muted-foreground mb-2">{concept?.name}</p>
-                <p className="text-sm leading-relaxed">
+              <Card className="flashcard-back h-full flex flex-col items-center justify-center text-center p-8 border-blue-100/60 shadow-lg shadow-blue-500/5 bg-gradient-to-b from-white to-blue-50/30">
+                <p className="text-xs text-blue-600 mb-2 font-medium">{concept?.name}</p>
+                <p className="text-sm leading-relaxed text-gray-700">
                   {concept?.description ?? "No description available. Check your notes."}
                 </p>
                 {concept?.key_formulas && (
-                  <div className="mt-4 rounded-md bg-muted px-4 py-2 font-mono text-xs">
+                  <div className="mt-4 rounded-xl bg-blue-50 border border-blue-100 px-4 py-2 font-mono text-xs text-blue-800">
                     {concept.key_formulas}
                   </div>
                 )}
@@ -157,7 +158,7 @@ export default function RevisionPage() {
                 <Button
                   key={value}
                   variant="outline"
-                  className={`flex flex-col h-16 gap-1 ${color}`}
+                  className={`flex flex-col h-16 gap-1 rounded-xl ${color}`}
                   onClick={() => reviewMutation.mutate({ conceptId, qualityScore: value })}
                   disabled={reviewMutation.isPending}
                 >
@@ -169,68 +170,66 @@ export default function RevisionPage() {
           )}
 
           {!flipped && (
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-sm text-gray-400">
               Tap the card to reveal the answer
             </p>
           )}
         </TabsContent>
 
         <TabsContent value="curve" className="mt-4 space-y-4">
-          {/* Summary stats */}
           <div className="grid grid-cols-2 gap-3">
-            <Card>
+            <Card className="border-blue-100/50 bg-white">
               <CardContent className="pt-4">
-                <p className="text-2xl font-bold">{currentAvg}%</p>
-                <p className="text-xs text-muted-foreground">Current avg retention</p>
+                <p className="text-2xl font-bold text-gray-900">{currentAvg}%</p>
+                <p className="text-xs text-gray-500">Current avg retention</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="border-blue-100/50 bg-white">
               <CardContent className="pt-4">
-                <p className="text-2xl font-bold">{nextDue ? new Date(nextDue).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}</p>
-                <p className="text-xs text-muted-foreground">Next review due</p>
+                <p className="text-2xl font-bold text-gray-900">{nextDue ? new Date(nextDue).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}</p>
+                <p className="text-xs text-gray-500">Next review due</p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Forgetting curve chart */}
-          <Card>
+          <Card className="border-blue-100/50 bg-white">
             <CardHeader>
-              <CardTitle className="text-sm">Forgetting Curve — Last 30 Days</CardTitle>
+              <CardTitle className="text-sm text-gray-800">Forgetting Curve — Last 30 Days</CardTitle>
             </CardHeader>
             <CardContent>
               {curveLoading ? (
-                <Skeleton className="h-48" />
+                <Skeleton className="h-48 rounded-xl" />
               ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <AreaChart data={(curve?.curve ?? []).filter((d) => d.avg_retention !== null)}>
                     <defs>
                       <linearGradient id="retentionGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-blue-100" />
                     <XAxis
                       dataKey="date"
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: "#9ca3af" }}
                       tickFormatter={(v: string) => v?.slice(5)}
                       interval="preserveStartEnd"
                     />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} unit="%" />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#9ca3af" }} unit="%" />
                     <Tooltip
-                      contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: 12 }}
+                      contentStyle={{ background: "white", border: "1px solid #dbeafe", borderRadius: "12px", fontSize: 12, boxShadow: "0 4px 12px -2px rgba(37,99,235,0.1)" }}
                       formatter={(v: number) => [`${v}%`, "Retention"]}
                       labelFormatter={(l: string) => new Date(l).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                     />
                     <ReferenceLine y={50} stroke="#f59e0b" strokeDasharray="4 2" label={{ value: "50%", fontSize: 10, fill: "#f59e0b" }} />
                     <ReferenceLine y={75} stroke="#22c55e" strokeDasharray="4 2" label={{ value: "75%", fontSize: 10, fill: "#22c55e" }} />
                     {nextDue && (
-                      <ReferenceLine x={nextDue} stroke="#6366f1" strokeDasharray="4 2" label={{ value: "Next review", fontSize: 10, fill: "#6366f1", position: "insideTopRight" }} />
+                      <ReferenceLine x={nextDue} stroke="#2563eb" strokeDasharray="4 2" label={{ value: "Next review", fontSize: 10, fill: "#2563eb", position: "insideTopRight" }} />
                     )}
                     <Area
                       type="monotone"
                       dataKey="avg_retention"
-                      stroke="#22c55e"
+                      stroke="#2563eb"
                       strokeWidth={2}
                       fill="url(#retentionGrad)"
                       dot={false}

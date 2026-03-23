@@ -8,7 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookOpen, ChevronDown, ChevronRight, CalendarCheck } from "lucide-react";
 import {
-  RadialBarChart, RadialBar, Tooltip, ResponsiveContainer,
+  RadialBarChart, RadialBar, ResponsiveContainer,
 } from "recharts";
 
 interface Subject {
@@ -62,11 +62,9 @@ function SubjectCard({
   const chapters: Chapter[] = (() => {
     const raw = (chaptersData as { chapters?: unknown[] })?.chapters ?? [];
     const progressChapters: Chapter[] = (progressData as { chapters?: Chapter[] })?.chapters ?? [];
-    // Prefer progress data (it has chapter + progress merged)
     return progressChapters.length ? progressChapters : (raw as Chapter[]);
   })();
 
-  // Chapters in today's plan for this subject
   const todayChapterIds = new Set(
     todaySlots
       .filter((s) => s.subject?.toLowerCase() === subject.name.toLowerCase())
@@ -74,23 +72,21 @@ function SubjectCard({
       .filter(Boolean)
   );
 
-  // Compute avg completion for the radial bar
   const avgCompletion = chapters.length
     ? Math.round(
         chapters.reduce((acc, c) => acc + (c.progress?.completion_percent ?? 0), 0) / chapters.length
       )
     : 0;
 
-  const radialData = [{ name: subject.name, value: avgCompletion, fill: avgCompletion >= 75 ? "#22c55e" : avgCompletion >= 40 ? "#eab308" : "#f97316" }];
+  const radialData = [{ name: subject.name, value: avgCompletion, fill: avgCompletion >= 75 ? "#22c55e" : avgCompletion >= 40 ? "#2563eb" : "#f97316" }];
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden border-blue-100/50 bg-white card-hover">
       <CardHeader
         className="cursor-pointer select-none"
         onClick={() => setExpanded((e) => !e)}
       >
         <div className="flex items-center gap-4">
-          {/* Mini radial ring */}
           <div className="h-12 w-12 shrink-0">
             <ResponsiveContainer width="100%" height="100%">
               <RadialBarChart
@@ -100,27 +96,27 @@ function SubjectCard({
                 startAngle={90}
                 endAngle={-270}
               >
-                <RadialBar dataKey="value" cornerRadius={4} background={{ fill: "hsl(var(--muted))" }} />
+                <RadialBar dataKey="value" cornerRadius={4} background={{ fill: "#eff6ff" }} />
               </RadialBarChart>
             </ResponsiveContainer>
           </div>
 
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-sm">{subject.name}</CardTitle>
-            <p className="text-xs text-muted-foreground">{avgCompletion}% avg completion</p>
+            <CardTitle className="text-sm text-gray-800">{subject.name}</CardTitle>
+            <p className="text-xs text-gray-500">{avgCompletion}% avg completion</p>
           </div>
 
           {todaySlots.some((s) => s.subject?.toLowerCase() === subject.name.toLowerCase()) && (
-            <Badge variant="secondary" className="shrink-0 text-xs gap-1">
+            <Badge variant="secondary" className="shrink-0 text-xs gap-1 bg-blue-50 text-blue-600 border-blue-200">
               <CalendarCheck className="h-3 w-3" />
               In today&apos;s plan
             </Badge>
           )}
 
           {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
           )}
         </div>
       </CardHeader>
@@ -128,30 +124,30 @@ function SubjectCard({
       {expanded && (
         <CardContent className="pt-0 space-y-3">
           {chaptersLoading || progressLoading ? (
-            Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14" />)
+            Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)
           ) : chapters.length ? (
             chapters.map((chapter) => {
               const pct = chapter.progress?.completion_percent ?? 0;
               const inPlan = todayChapterIds.has(chapter.id);
               return (
-                <div key={chapter.id} className={`rounded-lg border p-3 space-y-2 ${inPlan ? "border-primary/50 bg-primary/5" : ""}`}>
+                <div key={chapter.id} className={`rounded-xl border p-3 space-y-2 transition-all ${inPlan ? "border-blue-300 bg-blue-50/50 shadow-sm shadow-blue-500/10" : "border-gray-200 hover:border-blue-200"}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium flex-1 min-w-0 truncate">
+                    <p className="text-sm font-medium flex-1 min-w-0 truncate text-gray-800">
                       {chapter.chapter_number ? `${chapter.chapter_number}. ` : ""}{chapter.name}
                     </p>
                     <div className="flex items-center gap-2 shrink-0">
                       {inPlan && (
-                        <Badge variant="outline" className="text-xs text-primary border-primary/50 gap-1">
+                        <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 gap-1">
                           <CalendarCheck className="h-3 w-3" />
                           Today
                         </Badge>
                       )}
-                      <span className="text-xs text-muted-foreground">{Math.round(pct)}%</span>
+                      <span className="text-xs text-gray-500">{Math.round(pct)}%</span>
                     </div>
                   </div>
                   <Progress value={pct} />
                   {(chapter.progress?.concepts_mastered != null || chapter.progress?.concepts_seen != null) && (
-                    <div className="flex gap-3 text-xs text-muted-foreground">
+                    <div className="flex gap-3 text-xs text-gray-500">
                       {chapter.progress.concepts_mastered != null && (
                         <span className="text-green-600">{chapter.progress.concepts_mastered} mastered</span>
                       )}
@@ -167,7 +163,7 @@ function SubjectCard({
               );
             })
           ) : (
-            <p className="text-sm text-muted-foreground text-center py-4">No chapters found.</p>
+            <p className="text-sm text-gray-400 text-center py-4">No chapters found.</p>
           )}
         </CardContent>
       )}
@@ -192,19 +188,20 @@ export default function CurriculumPage() {
   return (
     <div className="p-8 space-y-6">
       <div className="flex items-center gap-3">
-        <BookOpen className="h-5 w-5 text-primary" />
+        <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 shadow-lg shadow-blue-500/20">
+          <BookOpen className="h-5 w-5 text-white" />
+        </div>
         <div>
-          <h1 className="text-xl font-semibold">Curriculum Flow</h1>
-          <p className="text-sm text-muted-foreground">Subject-wise chapter progress · today&apos;s plan highlighted</p>
+          <h1 className="text-xl font-semibold text-gray-900">Curriculum Flow</h1>
+          <p className="text-sm text-gray-500">Subject-wise chapter progress · today&apos;s plan highlighted</p>
         </div>
       </div>
 
-      {/* Today's plan summary */}
       {todaySlots.length > 0 && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="border-blue-300 bg-blue-50/50 shadow-sm shadow-blue-500/10">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <CalendarCheck className="h-4 w-4 text-primary" />
+            <CardTitle className="text-sm flex items-center gap-2 text-blue-700">
+              <CalendarCheck className="h-4 w-4" />
               Today&apos;s Study Plan
             </CardTitle>
           </CardHeader>
@@ -213,7 +210,7 @@ export default function CurriculumPage() {
               {todaySlots.map((slot, i) => {
                 const done = slot.is_completed || slot.status === "completed";
                 return (
-                  <Badge key={i} variant={done ? "default" : "outline"} className="text-xs gap-1">
+                  <Badge key={i} variant={done ? "default" : "outline"} className={`text-xs gap-1 ${done ? "bg-blue-600" : "border-blue-300 text-blue-700"}`}>
                     {done && <span>✓</span>}
                     {slot.subject} — {slot.type} ({slot.duration_minutes}m)
                   </Badge>
@@ -224,9 +221,8 @@ export default function CurriculumPage() {
         </Card>
       )}
 
-      {/* Subject list */}
       {subjectsLoading ? (
-        Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20" />)
+        Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)
       ) : subjects.length ? (
         <div className="space-y-3">
           {subjects.map((subject) => (
@@ -234,9 +230,9 @@ export default function CurriculumPage() {
           ))}
         </div>
       ) : (
-        <Card>
+        <Card className="border-blue-100/50 bg-white">
           <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground">No subjects available. Generate a study plan first.</p>
+            <p className="text-gray-400">No subjects available. Generate a study plan first.</p>
           </CardContent>
         </Card>
       )}

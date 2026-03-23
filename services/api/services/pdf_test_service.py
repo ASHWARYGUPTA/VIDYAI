@@ -154,30 +154,10 @@ async def extract_mcqs_from_pdf(pdf_bytes: bytes) -> list[dict]:
 
 def analyze_frame_for_faces(jpeg_bytes: bytes) -> dict:
     """
-    Use OpenCV Haar cascade to count faces in a JPEG frame.
-    Returns {"face_count": int, "violations": [str]}.
+    Analyze a JPEG webcam frame for proctoring violations.
+    Delegates to the proctoring module (DNN face detector + gaze estimation).
+    Returns {"face_count": int, "violations": list[str]}.
     """
-    try:
-        import cv2
-        import numpy as np
-        arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if img is None:
-            return {"face_count": -1, "violations": []}
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
-        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
-        face_count = len(faces)
-        violations = []
-        if face_count == 0:
-            violations.append("no_face")
-        elif face_count > 1:
-            violations.append("multiple_faces")
-        return {"face_count": face_count, "violations": violations}
-    except ImportError:
-        return {"face_count": -1, "violations": []}
-    except Exception as e:
-        logger.error("Frame analysis error: %s", e)
-        return {"face_count": -1, "violations": []}
+    from ..utils.proctoring import analyze_frame
+    result = analyze_frame(jpeg_bytes)
+    return {"face_count": result["face_count"], "violations": result["violations"]}

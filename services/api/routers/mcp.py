@@ -40,7 +40,7 @@ def _auth_partner(raw_key: str) -> dict:
         .maybe_single()
         .execute()
     )
-    if not key_row.data or not key_row.data["is_active"]:
+    if key_row is None or not key_row.data or not key_row.data["is_active"]:
         raise PermissionError("Invalid or inactive API key")
 
     if key_row.data.get("expires_at"):
@@ -77,7 +77,7 @@ def _resolve_student(partner_id: str, external_student_id: str) -> uuid.UUID | N
         .maybe_single()
         .execute()
     )
-    if mapping.data and mapping.data.get("vidyai_user_id"):
+    if mapping is not None and mapping.data and mapping.data.get("vidyai_user_id"):
         return uuid.UUID(mapping.data["vidyai_user_id"])
     return None
 
@@ -112,7 +112,7 @@ async def solve_doubt(
     subject_id = None
     if subject:
         sub = client.table("subjects").select("id").eq("name", subject).maybe_single().execute()
-        if sub.data:
+        if sub is not None and sub.data:
             subject_id = uuid.UUID(sub.data["id"])
 
     sess = client.table("study_sessions").insert({
@@ -259,7 +259,7 @@ async def get_study_plan(
         .execute()
     )
 
-    if existing.data:
+    if existing is not None and existing.data:
         plan = existing.data
     else:
         result = await generate_study_plan(
@@ -300,7 +300,7 @@ async def run_mcq_test(
     subject_id = None
     if subject:
         sub = client.table("subjects").select("id").eq("name", subject).maybe_single().execute()
-        if sub.data:
+        if sub is not None and sub.data:
             subject_id = uuid.UUID(sub.data["id"])
 
     questions = await fetch_questions(
@@ -430,7 +430,7 @@ async def get_video_status(job_id: str, _api_key: str = "") -> dict:
     client = get_supabase_service_client()
 
     result = client.table("processed_videos").select("processing_status, structured_notes, summary, error_message").eq("job_id", job_id).maybe_single().execute()
-    if not result.data:
+    if result is None or not result.data:
         return {"status": "failed", "progress_percent": 0, "error": "job not found"}
 
     row = result.data
@@ -475,7 +475,7 @@ async def resource_student_profile(student_id: str) -> dict:
         .maybe_single()
         .execute()
     )
-    if not mapping.data or not mapping.data.get("vidyai_user_id"):
+    if mapping is None or not mapping.data or not mapping.data.get("vidyai_user_id"):
         return {"student_id": student_id, "profile": None}
 
     uid = mapping.data["vidyai_user_id"]
@@ -487,8 +487,8 @@ async def resource_student_profile(student_id: str) -> dict:
 
     return {
         "student_id": student_id,
-        "profile": profile.data,
-        "streak": streak.data,
+        "profile": profile.data if profile is not None else None,
+        "streak": streak.data if streak is not None else None,
         "mastery_summary": mastery_summary,
     }
 
@@ -504,7 +504,7 @@ async def resource_knowledge_graph(student_id: str) -> dict:
         .maybe_single()
         .execute()
     )
-    if not mapping.data or not mapping.data.get("vidyai_user_id"):
+    if mapping is None or not mapping.data or not mapping.data.get("vidyai_user_id"):
         return {"student_id": student_id, "concepts": []}
 
     uid = mapping.data["vidyai_user_id"]

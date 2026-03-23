@@ -1,33 +1,27 @@
 /**
- * Partner API client — uses stored API key as Bearer token.
- * Separate from the student API client which uses Supabase JWT.
+ * Partner API client — uses the logged-in user's Supabase JWT as Bearer token.
+ * Partners authenticate with email/password (same Supabase instance as students).
+ * API keys are managed in the portal and used only server-side.
  */
+import { createClient } from "@/lib/supabase/client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const STORAGE_KEY = "vidyai_partner_key";
 
-export function getPartnerKey(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(STORAGE_KEY);
-}
-
-export function setPartnerKey(key: string): void {
-  localStorage.setItem(STORAGE_KEY, key);
-}
-
-export function clearPartnerKey(): void {
-  localStorage.removeItem(STORAGE_KEY);
+async function getPartnerToken(): Promise<string | null> {
+  const supabase = createClient();
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
 async function partnerRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const key = getPartnerKey();
-  if (!key) throw Object.assign(new Error("No API key"), { status: 401 });
+  const token = await getPartnerToken();
+  if (!token) throw Object.assign(new Error("Not authenticated"), { status: 401 });
 
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
+      Authorization: `Bearer ${token}`,
       ...(options.headers ?? {}),
     },
   });
@@ -43,7 +37,14 @@ async function partnerRequest<T>(path: string, options: RequestInit = {}): Promi
 }
 
 export const partnerApi = {
-  // Validate key + get partner info
+  // Onboard a new partner org (called once on signup)
+  onboard: (orgName: string, website?: string) =>
+    partnerRequest<{ partner_id: string; org_name: string; tier: string }>(
+      "/api/v1/embed/onboard",
+      { method: "POST", body: JSON.stringify({ org_name: orgName, website }) }
+    ),
+
+  // Validate session (checks if user is linked to a partner org)
   validate: () =>
     partnerRequest<{
       valid: boolean;

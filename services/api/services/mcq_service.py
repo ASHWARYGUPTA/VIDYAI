@@ -49,22 +49,43 @@ async def grade_test(user_id: uuid.UUID, test_session_id: uuid.UUID) -> dict[str
     if not session.data or session.data.get("submitted_at"):
         return {}
 
-    answers = client.table("test_answers").select("*").eq("test_session_id", str(test_session_id)).execute()
-    answer_map = {a["question_id"]: a for a in (answers.data or [])}
-
     question_ids = session.data.get("question_ids", [])
-    questions = client.table("questions").select("id, correct_option, explanation, explanation_hindi, concept_ids, marks_positive, marks_negative").in_("id", question_ids).execute()
+
+    # Use inline questions from metadata when available (e.g. quick JEE test)
+    metadata = session.data.get("metadata") or {}
+    inline = metadata.get("inline_questions")
+
+    # Build answer map — inline tests store answers in metadata.answers to avoid FK constraints
+    if inline:
+        raw_answers = metadata.get("answers") or {}
+        # Normalize to same shape as test_answers rows
+        answer_map = {
+            qid: {"question_id": qid, "selected_option": v["selected_option"], "time_spent_ms": v.get("time_spent_ms")}
+            for qid, v in raw_answers.items()
+        }
+    else:
+        answers = client.table("test_answers").select("*").eq("test_session_id", str(test_session_id)).execute()
+        answer_map = {a["question_id"]: a for a in (answers.data or [])}
+    if inline:
+        questions_list = inline  # already have correct_option
+    elif question_ids:
+        q_result = client.table("questions").select(
+            "id, correct_option, explanation, explanation_hindi, concept_ids, marks_positive, marks_negative"
+        ).in_("id", question_ids).execute()
+        questions_list = q_result.data or []
+    else:
+        questions_list = []
 
     total_score = 0.0
     max_score = 0.0
     results = []
 
-    for q in (questions.data or []):
+    for q in questions_list:
         answer = answer_map.get(q["id"])
         selected = answer["selected_option"] if answer else "skipped"
         is_correct = selected == q["correct_option"]
-        marks_pos = float(q["marks_positive"] or 4)
-        marks_neg = float(q["marks_negative"] or 1)
+        marks_pos = float(q.get("marks_positive") or 4)
+        marks_neg = float(q.get("marks_negative") or 1)
         max_score += marks_pos
 
         if selected == "skipped":
@@ -76,8 +97,8 @@ async def grade_test(user_id: uuid.UUID, test_session_id: uuid.UUID) -> dict[str
 
         total_score += marks
 
-        # Update answer row with correctness
-        if answer:
+        # Update answer row with correctness (only for DB-backed answers, not inline)
+        if answer and not inline and answer.get("id"):
             client.table("test_answers").update({"is_correct": is_correct, "marks_awarded": marks}).eq("id", answer["id"]).execute()
 
         results.append({

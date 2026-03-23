@@ -6,19 +6,11 @@ from .conftest import TEST_USER_ID, TEST_VIDEO_ID, make_sb_mock
 @pytest.mark.asyncio
 async def test_process_video_success(client):
     sb, chain, exe = make_sb_mock()
-    chain.execute.side_effect = [
-        MagicMock(data={"subscription_tier": "free"}),           # tier
-        MagicMock(data=None, count=0),                           # rate limit
-        MagicMock(data=[{"id": str(TEST_VIDEO_ID)}]),            # insert video row
-        MagicMock(data=[{"id": str(TEST_VIDEO_ID)}]),            # update job_id
-    ]
-
-    mock_task = MagicMock()
-    mock_task.id = "celery-task-abc123"
+    # Router inserts a row then adds a background task (no Celery)
+    chain.execute.return_value = MagicMock(data=[{"id": str(TEST_VIDEO_ID)}])
 
     with patch("services.api.routers.content.get_supabase_service_client", return_value=sb), \
-         patch("services.api.routers.content.celery_app") as mock_celery:
-        mock_celery.send_task.return_value = mock_task
+         patch("services.api.routers.content._process_video_background"):
         r = await client.post("/api/v1/content/process", json={
             "youtube_url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
             "output_language": "en",
@@ -31,21 +23,19 @@ async def test_process_video_success(client):
 
 
 @pytest.mark.asyncio
-async def test_process_video_rate_limit(client):
+async def test_process_video_queues_background_task(client):
+    """Router enqueues a background task and returns 202 immediately."""
     sb, chain, exe = make_sb_mock()
-    chain.execute.side_effect = [
-        MagicMock(data={"subscription_tier": "free"}),
-        MagicMock(data=None, count=5),  # at limit
-    ]
+    chain.execute.return_value = MagicMock(data=[{"id": str(TEST_VIDEO_ID)}])
 
     with patch("services.api.routers.content.get_supabase_service_client", return_value=sb), \
-         patch("services.api.routers.content.celery_app"):
+         patch("services.api.routers.content._process_video_background") as mock_bg:
         r = await client.post("/api/v1/content/process", json={
-            "youtube_url": "https://youtube.com/watch?v=abc",
+            "youtube_url": "https://youtube.com/watch?v=testurl123",
         })
 
-    assert r.status_code == 429
-    assert r.json()["detail"]["code"] == "VIDEO_LIMIT_REACHED"
+    assert r.status_code == 202
+    assert r.json()["status"] == "pending"
 
 
 @pytest.mark.asyncio
@@ -70,7 +60,7 @@ async def test_get_status_pending(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "pending"
-    assert body["progress_percent"] == 0
+    assert body["progress_percent"] == 5   # router maps pending→5
     assert body["result"] is None
 
 

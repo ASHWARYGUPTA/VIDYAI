@@ -1,13 +1,12 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, BookOpen } from "lucide-react";
+import { Send, BookOpen, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { tutorApi } from "@/lib/api/endpoints";
 import { NoteRenderer } from "@/components/markdown-renderer";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatIST } from "@/lib/utils";
@@ -73,9 +72,17 @@ export default function TutorPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b p-6">
-        <h1 className="text-xl font-semibold">AI Tutor</h1>
-        <p className="text-sm text-muted-foreground">Ask any doubt — I&apos;ll explain using your syllabus</p>
+      {/* Header */}
+      <div className="border-b border-blue-100/60 bg-white p-6">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 shadow-lg shadow-blue-500/20">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">AI Tutor</h1>
+            <p className="text-sm text-gray-500">Ask any doubt — I&apos;ll explain using your syllabus</p>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -84,9 +91,22 @@ export default function TutorPage() {
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.length === 0 && (
               <div className="flex h-full items-center justify-center">
-                <div className="text-center space-y-2">
-                  <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/30" />
-                  <p className="text-muted-foreground">Ask your first question to get started</p>
+                <div className="text-center space-y-3">
+                  <div className="mx-auto rounded-2xl bg-blue-50 p-5 w-fit">
+                    <BookOpen className="h-10 w-10 text-blue-400" />
+                  </div>
+                  <p className="text-gray-400 text-sm">Ask your first question to get started</p>
+                  <div className="flex flex-wrap gap-2 justify-center max-w-md">
+                    {["Explain Newton's third law", "What is mitosis?", "Fundamental Rights in India"].map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => { setQuestion(q); }}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -95,8 +115,8 @@ export default function TutorPage() {
                 <div
                   className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-tr-sm"
-                      : "bg-muted rounded-tl-sm"
+                      ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-tr-sm shadow-md shadow-blue-500/20"
+                      : "bg-white border border-blue-100/60 rounded-tl-sm shadow-sm"
                   }`}
                 >
                   {msg.role === "user" ? (
@@ -105,10 +125,10 @@ export default function TutorPage() {
                     <NoteRenderer markdown={msg.content} />
                   )}
                   {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-3 space-y-1.5 border-t border-border/40 pt-2">
-                      <p className="text-xs font-medium opacity-70">Sources</p>
+                    <div className="mt-3 space-y-1.5 border-t border-blue-100/40 pt-2">
+                      <p className="text-xs font-medium text-blue-600/70">Sources</p>
                       {msg.sources.slice(0, 4).map((s, si) => (
-                        <div key={si} className="text-xs opacity-60">
+                        <div key={si} className="text-xs text-gray-500">
                           <span className="font-medium">{s.title ?? "Reference"}</span>
                           {s.chapter ? <span> › {s.chapter}</span> : null}
                           {s.page ? <span className="ml-1 opacity-70">p.{s.page}</span> : null}
@@ -121,7 +141,7 @@ export default function TutorPage() {
             ))}
             {askMutation.isPending && (
               <div className="flex justify-start">
-                <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3 space-y-2">
+                <div className="bg-white border border-blue-100/60 rounded-2xl rounded-tl-sm px-4 py-3 space-y-2 shadow-sm">
                   <Skeleton className="h-3 w-48" />
                   <Skeleton className="h-3 w-36" />
                 </div>
@@ -130,17 +150,23 @@ export default function TutorPage() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t p-4">
+          {/* Input */}
+          <div className="border-t border-blue-100/60 bg-white p-4">
             <div className="flex gap-2 items-end">
               <Textarea
                 placeholder="Ask a doubt…"
-                className="resize-none min-h-[44px] max-h-32"
+                className="resize-none min-h-[44px] max-h-32 border-gray-200 focus:border-blue-300 bg-white"
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
               />
-              <Button size="icon" onClick={handleSend} disabled={!question.trim() || askMutation.isPending}>
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={!question.trim() || askMutation.isPending}
+                className="bg-gradient-to-r from-blue-600 to-blue-500 shadow-md shadow-blue-500/20 shrink-0"
+              >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
@@ -148,26 +174,30 @@ export default function TutorPage() {
         </div>
 
         {/* History sidebar */}
-        <div className="hidden lg:flex w-72 flex-col border-l">
-          <div className="p-4 border-b">
-            <h2 className="text-sm font-semibold">Recent Sessions</h2>
+        <div className="hidden lg:flex w-72 flex-col border-l border-blue-100/60 bg-white">
+          <div className="p-4 border-b border-blue-100/60">
+            <h2 className="text-sm font-semibold text-gray-800">Recent Sessions</h2>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {histLoading ? (
-              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16" />)
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)
             ) : history?.doubts?.length ? (
               history.doubts.map((s: { id: string; question_text: string; created_at: string }) => (
                 <button
                   key={s.id}
                   onClick={() => setDoubtId(s.id)}
-                  className={`w-full rounded-lg border p-3 text-left text-sm transition-colors hover:bg-accent ${doubtId === s.id ? "border-primary bg-primary/5" : ""}`}
+                  className={`w-full rounded-xl border p-3 text-left text-sm transition-all hover:shadow-sm ${
+                    doubtId === s.id
+                      ? "border-blue-400 bg-blue-50/80 shadow-sm shadow-blue-500/10"
+                      : "border-gray-200 hover:border-blue-200 hover:bg-blue-50/30"
+                  }`}
                 >
-                  <p className="font-medium line-clamp-2">{s.question_text}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{formatIST(s.created_at)}</p>
+                  <p className="font-medium line-clamp-2 text-gray-800">{s.question_text}</p>
+                  <p className="text-xs text-gray-400 mt-1">{formatIST(s.created_at)}</p>
                 </button>
               ))
             ) : (
-              <p className="text-xs text-muted-foreground p-2">No history yet</p>
+              <p className="text-xs text-gray-400 p-2">No history yet</p>
             )}
           </div>
         </div>

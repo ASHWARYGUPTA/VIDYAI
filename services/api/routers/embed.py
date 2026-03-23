@@ -23,7 +23,13 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import re
+import uuid as _uuid
+
 from fastapi import APIRouter, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends
+from typing import Annotated
 from pydantic import BaseModel
 
 from ..dependencies_partner import CurrentPartner
@@ -147,3 +153,103 @@ async def get_embed_settings(partner: CurrentPartner):
         .execute()
     )
     return result.data
+
+
+# ── Partner Portal Onboarding ─────────────────────────────────────────────────
+
+_auth_bearer = HTTPBearer()
+
+
+class OnboardPartnerRequest(BaseModel):
+    org_name: str
+    website: str | None = None
+
+
+@router.post("/onboard", status_code=status.HTTP_201_CREATED)
+async def onboard_partner(
+    body: OnboardPartnerRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(_auth_bearer)],
+):
+    """
+    Create a new partner organization for a Supabase-authenticated user.
+    Called during Partner Portal sign-up — no API key required, just a valid user JWT.
+
+    Returns the new partner_id. After this call the user can log in to the Partner Portal
+    and create API keys from the Keys page.
+    """
+    client = get_supabase_service_client()
+
+    # Validate Supabase JWT
+    try:
+        user_resp = client.auth.get_user(credentials.credentials)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "invalid_token", "code": "INVALID_JWT"},
+        )
+
+    if not user_resp or not user_resp.user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "invalid_token", "code": "INVALID_JWT"},
+        )
+
+    user_id = user_resp.user.id
+
+    # Check not already a partner
+    existing = (
+        client.table("partner_users")
+        .select("partner_id")
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    if existing is not None and existing.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "already_onboarded", "partner_id": existing.data["partner_id"]},
+        )
+
+    # Build slug from org name
+    slug = re.sub(r"[^a-z0-9]+", "-", body.org_name.lower()).strip("-")[:50]
+    # Ensure slug uniqueness
+    slug_check = (
+        client.table("partner_organizations")
+        .select("id")
+        .eq("slug", slug)
+        .maybe_single()
+        .execute()
+    )
+    if slug_check is not None and slug_check.data:
+        slug = f"{slug}-{str(_uuid.uuid4())[:6]}"
+
+    org_result = client.table("partner_organizations").insert({
+        "name": body.org_name,
+        "slug": slug,
+        "contact_email": user_resp.user.email,
+        "tier": "starter",
+        "monthly_call_limit": 50000,
+        "calls_used_this_month": 0,
+        "is_active": True,
+        "allowed_features": ["tutor", "planner", "tests", "graph", "knowledge", "content"],
+        "allowed_origins": [],
+    }).execute()
+
+    partner_id = org_result.data[0]["id"]
+
+    # Link user → partner org
+    client.table("partner_users").insert({
+        "user_id": user_id,
+        "partner_id": partner_id,
+        "role": "admin",
+    }).execute()
+
+    logger.info("Partner onboarded", extra={"partner_id": partner_id, "user_id": user_id})
+
+    return {
+        "partner_id": partner_id,
+        "org_name": body.org_name,
+        "slug": slug,
+        "tier": "starter",
+        "monthly_call_limit": 50000,
+    }

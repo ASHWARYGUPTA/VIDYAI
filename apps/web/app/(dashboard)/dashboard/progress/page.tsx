@@ -6,13 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BarChart2 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 
-// Retention score bands: 0=no activity, 0-0.25=critical, 0.25-0.5=weak, 0.5-0.75=moderate, 0.75+=strong
 function retentionClass(score: number, hasActivity: boolean) {
-  if (!hasActivity) return "bg-muted";
+  if (!hasActivity) return "bg-gray-200";
   if (score >= 0.75) return "bg-green-500";
   if (score >= 0.50) return "bg-yellow-400";
   if (score >= 0.25) return "bg-orange-400";
@@ -53,7 +53,7 @@ export default function ProgressPage() {
       <div className="p-8 space-y-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
         </div>
       </div>
     );
@@ -63,50 +63,56 @@ export default function ProgressPage() {
 
   return (
     <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Progress</h1>
-        <p className="text-sm text-muted-foreground">Your learning journey at a glance</p>
+      <div className="flex items-center gap-3">
+        <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 shadow-lg shadow-blue-500/20">
+          <BarChart2 className="h-5 w-5 text-white" />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Progress</h1>
+          <p className="text-sm text-gray-500">Your learning journey at a glance</p>
+        </div>
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList>
+        <TabsList className="bg-white border border-blue-100/60">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="xp">XP &amp; Badges</TabsTrigger>
           <TabsTrigger value="heatmap">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-6">
-          {/* Mastery summary */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { key: "mastered", label: "Mastered", color: "text-green-600" },
-              { key: "learning", label: "Learning", color: "text-blue-600" },
-              { key: "weak", label: "Weak", color: "text-red-500" },
-              { key: "new", label: "New", color: "text-muted-foreground" },
-            ].map(({ key, label, color }) => (
-              <Card key={key}>
+              { key: "mastered", label: "Mastered", gradient: "from-green-500 to-green-600" },
+              { key: "learning", label: "Learning", gradient: "from-blue-500 to-blue-600" },
+              { key: "weak", label: "Weak", gradient: "from-red-400 to-red-500" },
+              { key: "new", label: "New", gradient: "from-gray-400 to-gray-500" },
+            ].map(({ key, label, gradient }) => (
+              <Card key={key} className="border-blue-100/50 bg-white card-hover">
                 <CardContent className="pt-6">
-                  <p className="text-2xl font-bold">{masteryDist[key] ?? 0}</p>
-                  <p className={`text-sm ${color}`}>{label}</p>
+                  <p className="text-2xl font-bold text-gray-900">{masteryDist[key] ?? 0}</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <div className={`h-2 w-2 rounded-full bg-gradient-to-r ${gradient}`} />
+                    <p className="text-sm text-gray-600">{label}</p>
+                  </div>
                 </CardContent>
               </Card>
             ))}
           </div>
 
-          {/* Weekly chart */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Weekly Performance</CardTitle></CardHeader>
+          <Card className="border-blue-100/50 bg-white">
+            <CardHeader><CardTitle className="text-base text-gray-800">Weekly Performance</CardTitle></CardHeader>
             <CardContent>
-              {weekLoading ? <Skeleton className="h-48" /> : (
+              {weekLoading ? <Skeleton className="h-48 rounded-xl" /> : (
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={weekly?.weeks ?? []}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="week_start" tick={{ fontSize: 12 }} tickFormatter={(v) => v?.slice(5)} />
-                    <YAxis tick={{ fontSize: 12 }} />
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-blue-100" />
+                    <XAxis dataKey="week_start" tick={{ fontSize: 12, fill: "#9ca3af" }} tickFormatter={(v) => v?.slice(5)} />
+                    <YAxis tick={{ fontSize: 12, fill: "#9ca3af" }} />
                     <Tooltip
-                      contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }}
+                      contentStyle={{ background: "white", border: "1px solid #dbeafe", borderRadius: "12px", boxShadow: "0 4px 12px -2px rgba(37,99,235,0.1)" }}
                     />
-                    <Bar dataKey="xp_earned" name="XP" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="xp_earned" name="XP" fill="#2563eb" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -115,18 +121,19 @@ export default function ProgressPage() {
         </TabsContent>
 
         <TabsContent value="xp" className="mt-4 space-y-6">
-          {xpLoading ? <Skeleton className="h-32" /> : (
+          {xpLoading ? <Skeleton className="h-32 rounded-xl" /> : (
             <>
-              <Card>
+              <Card className="border-blue-100/50 bg-white overflow-hidden">
+                <div className="h-2 bg-gradient-to-r from-blue-500 to-blue-600" />
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <p className="text-3xl font-bold">{xpData?.total_xp ?? 0} XP</p>
-                      <p className="text-sm text-muted-foreground">Level {xpData?.level ?? 1}</p>
+                      <p className="text-3xl font-bold text-gray-900">{xpData?.total_xp ?? 0} XP</p>
+                      <p className="text-sm text-gray-500">Level {xpData?.level ?? 1}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Next level</p>
-                      <p className="font-medium">{xpData?.next_level_xp ?? 500} XP</p>
+                      <p className="text-sm text-gray-500">Next level</p>
+                      <p className="font-medium text-gray-800">{xpData?.next_level_xp ?? 500} XP</p>
                     </div>
                   </div>
                   <Progress value={Math.min(100, ((xpData?.total_xp ?? 0) / (xpData?.next_level_xp ?? 500)) * 100)} />
@@ -135,10 +142,10 @@ export default function ProgressPage() {
 
               {xpData?.badges?.length ? (
                 <div>
-                  <h2 className="text-sm font-semibold mb-3">Badges Earned</h2>
+                  <h2 className="text-sm font-semibold mb-3 text-gray-800">Badges Earned</h2>
                   <div className="flex flex-wrap gap-2">
                     {xpData.badges.map((b: { id: string; name: string; description: string }) => (
-                      <Badge key={b.id} className="gap-1 py-1 px-3">
+                      <Badge key={b.id} className="gap-1 py-1.5 px-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-sm">
                         {b.name}
                       </Badge>
                     ))}
@@ -147,15 +154,15 @@ export default function ProgressPage() {
               ) : null}
 
               <div>
-                <h2 className="text-sm font-semibold mb-3">XP History</h2>
+                <h2 className="text-sm font-semibold mb-3 text-gray-800">XP History</h2>
                 <div className="space-y-2">
                   {((xpData?.ledger ?? []) as { activity_date: string; xp_earned: number; study_minutes: number }[]).slice(0, 14).map((entry) => (
-                    <div key={entry.activity_date} className="flex items-center gap-3 rounded-lg border p-3">
+                    <div key={entry.activity_date} className="flex items-center gap-3 rounded-xl border border-gray-200 p-3 hover:border-blue-200 hover:bg-blue-50/30 transition-all">
                       <div className="flex-1">
-                        <p className="text-sm">{new Date(entry.activity_date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</p>
-                        <p className="text-xs text-muted-foreground">{entry.study_minutes}m studied</p>
+                        <p className="text-sm text-gray-800">{new Date(entry.activity_date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</p>
+                        <p className="text-xs text-gray-400">{entry.study_minutes}m studied</p>
                       </div>
-                      <Badge variant="secondary">+{entry.xp_earned} XP</Badge>
+                      <Badge variant="secondary" className="bg-blue-50 text-blue-600 border-blue-200">+{entry.xp_earned} XP</Badge>
                     </div>
                   ))}
                 </div>
@@ -165,13 +172,13 @@ export default function ProgressPage() {
         </TabsContent>
 
         <TabsContent value="heatmap" className="mt-4">
-          <Card>
+          <Card className="border-blue-100/50 bg-white">
             <CardHeader>
-              <CardTitle className="text-base">Retention Heatmap</CardTitle>
-              <p className="text-xs text-muted-foreground">Color = avg retention score on that day</p>
+              <CardTitle className="text-base text-gray-800">Retention Heatmap</CardTitle>
+              <p className="text-xs text-gray-500">Color = avg retention score on that day</p>
             </CardHeader>
             <CardContent>
-              {heatLoading ? <Skeleton className="h-32" /> : (
+              {heatLoading ? <Skeleton className="h-32 rounded-xl" /> : (
                 <div className="overflow-x-auto">
                   <div className="flex gap-1 flex-wrap">
                     {((heatmap?.days ?? []) as { activity_date: string; xp_earned: number; study_minutes: number; cards_reviewed: number; avg_retention_score: number }[]).map((day) => {
@@ -186,10 +193,10 @@ export default function ProgressPage() {
                       );
                     })}
                   </div>
-                  <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground flex-wrap">
+                  <div className="flex items-center gap-2 mt-3 text-xs text-gray-500 flex-wrap">
                     <span>Retention:</span>
                     {[
-                      { cls: "bg-muted", label: "No activity" },
+                      { cls: "bg-gray-200", label: "No activity" },
                       { cls: "bg-red-400", label: "Critical (<25%)" },
                       { cls: "bg-orange-400", label: "Weak (25–50%)" },
                       { cls: "bg-yellow-400", label: "Moderate (50–75%)" },

@@ -6,11 +6,8 @@ from .conftest import TEST_USER_ID, TEST_DOUBT_ID, TEST_SESSION_ID, make_sb_mock
 @pytest.mark.asyncio
 async def test_ask_success(client):
     sb, chain, exe = make_sb_mock()
-    chain.execute.side_effect = [
-        MagicMock(data={"subscription_tier": "free"}),  # tier check
-        MagicMock(data=None, count=0),                  # rate limit count
-        MagicMock(data=[{"id": str(TEST_SESSION_ID)}]), # create study_session
-    ]
+    # Router creates a study_session when no session_id provided, then calls answer_doubt
+    chain.execute.return_value = MagicMock(data=[{"id": str(TEST_SESSION_ID)}])
 
     mock_answer = {
         "doubt_id": TEST_DOUBT_ID,
@@ -41,18 +38,24 @@ async def test_ask_question_too_short(client):
 
 
 @pytest.mark.asyncio
-async def test_ask_rate_limit_free(client):
+async def test_ask_no_session_id(client):
+    """Router auto-creates a study_session when none is provided."""
     sb, chain, exe = make_sb_mock()
-    chain.execute.side_effect = [
-        MagicMock(data={"subscription_tier": "free"}),
-        MagicMock(data=None, count=10),  # already at limit
-    ]
+    chain.execute.return_value = MagicMock(data=[{"id": str(TEST_SESSION_ID)}])
 
-    with patch("services.api.routers.tutor.get_supabase_service_client", return_value=sb):
+    mock_answer = {
+        "doubt_id": TEST_DOUBT_ID,
+        "answer": "Photosynthesis converts light to sugar.",
+        "answer_language": "en",
+        "sources": [], "related_concepts": [], "follow_up_suggestions": [],
+        "tokens_used": 80, "latency_ms": 400,
+    }
+
+    with patch("services.api.routers.tutor.get_supabase_service_client", return_value=sb), \
+         patch("services.api.routers.tutor.answer_doubt", new_callable=AsyncMock, return_value=mock_answer):
         r = await client.post("/api/v1/tutor/ask", json={"question": "What is photosynthesis?"})
 
-    assert r.status_code == 429
-    assert r.json()["detail"]["code"] == "FREE_LIMIT_REACHED"
+    assert r.status_code == 200
 
 
 @pytest.mark.asyncio

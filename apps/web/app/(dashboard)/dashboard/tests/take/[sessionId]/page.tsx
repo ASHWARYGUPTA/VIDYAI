@@ -61,12 +61,15 @@ function useProctor(sessionId: string | null, enabled: boolean) {
     } catch {}
   }, [sessionId]);
 
-  // Start webcam
+  // Start webcam — store stream and attach to video element whenever it's ready
   const startCam = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      // Attach immediately if the video element is already in the DOM
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
       setCamActive(true);
     } catch {
       toast.error("Camera access denied — proctoring requires webcam");
@@ -99,6 +102,8 @@ function useProctor(sessionId: string | null, enabled: boolean) {
         addViolation("no_face", "No face detected — please stay in frame");
       } else if (res.violations.includes("multiple_faces")) {
         addViolation("multiple_faces", "Multiple people detected!");
+      } else if (res.violations.includes("looking_away")) {
+        addViolation("looking_away", "Please look at the screen");
       }
     } catch {}
   }, [sessionId, addViolation]);
@@ -148,6 +153,13 @@ function useProctor(sessionId: string | null, enabled: boolean) {
       if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
     };
   }, [enabled, camActive, sessionId, sendFrame]);
+
+  // Re-attach stream when the video element mounts (e.g. after phase → "test")
+  useEffect(() => {
+    if (camActive && streamRef.current && videoRef.current && !videoRef.current.srcObject) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  });
 
   // Cleanup on unmount
   useEffect(() => {
@@ -244,6 +256,8 @@ export default function TakeTestPage() {
     expires_at: string;
     duration_minutes: number;
   } | null>(null);
+  // Metadata shown on the setup screen (loaded before camera starts)
+  const [setupMeta, setSetupMeta] = useState<{ title: string; questionCount: number; duration: number } | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{ score: number; max_score: number; accuracy: number } | null>(null);
@@ -255,16 +269,34 @@ export default function TakeTestPage() {
 
   const countdown = useCountdown(phase === "test" ? testData?.expires_at ?? null : null);
 
-  // Load test session data
+  // Load setup metadata (before camera) so the setup screen shows real info
+  useEffect(() => {
+    api.get<{
+      session: { total_questions: number; duration_minutes: number; metadata: Record<string, string> };
+      questions: Question[];
+    }>(`/api/v1/mcq/session/${sessionId}`)
+      .then((data) => {
+        setSetupMeta({
+          title: data.session.metadata?.title ?? data.session.metadata?.pdf_test_title ?? "Test",
+          questionCount: data.session.total_questions,
+          duration: data.session.duration_minutes,
+        });
+      })
+      .catch(() => {
+        setSetupMeta({ title: "Test", questionCount: 0, duration: 60 });
+      });
+  }, [sessionId]);
+
+  // Load test session data (after camera starts)
   const loadSession = useCallback(async () => {
     setPhase("loading");
     try {
       const data = await api.get<{
-        session: { total_questions: number; duration_minutes: number; metadata: { pdf_test_title?: string } };
+        session: { total_questions: number; duration_minutes: number; metadata: Record<string, string> };
         questions: Question[];
       }>(`/api/v1/mcq/session/${sessionId}`);
       setTestData({
-        title: data.session.metadata?.pdf_test_title ?? "Test",
+        title: data.session.metadata?.title ?? data.session.metadata?.pdf_test_title ?? "Test",
         questions: data.questions,
         expires_at: new Date(Date.now() + data.session.duration_minutes * 60000).toISOString(),
         duration_minutes: data.session.duration_minutes,
@@ -323,29 +355,43 @@ export default function TakeTestPage() {
     }
   }, [countdown, phase]); // eslint-disable-line
 
+  // Hidden video+canvas always in DOM so videoRef/canvasRef are valid before phase="test"
+  const hiddenMedia = (
+    <>
+      <video ref={videoRef} autoPlay muted playsInline className="hidden" />
+      <canvas ref={canvasRef} className="hidden" />
+    </>
+  );
+
   // ── Setup screen ────────────────────────────────────────────────────────────
   if (phase === "setup") {
     return (
-      <SetupScreen
-        title="Test"
-        questionCount={0}
-        duration={60}
-        onStart={handleStart}
-      />
+      <>
+        {hiddenMedia}
+        <SetupScreen
+          title={setupMeta?.title ?? "Test"}
+          questionCount={setupMeta?.questionCount ?? 0}
+          duration={setupMeta?.duration ?? 60}
+          onStart={handleStart}
+        />
+      </>
     );
   }
 
   if (phase === "loading") {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center space-y-3">
-          <svg className="animate-spin h-8 w-8 text-primary mx-auto" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-          </svg>
-          <p className="text-sm text-muted-foreground">Loading test…</p>
+      <>
+        {hiddenMedia}
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center space-y-3">
+            <svg className="animate-spin h-8 w-8 text-primary mx-auto" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            <p className="text-sm text-muted-foreground">Loading test…</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -485,7 +531,7 @@ export default function TakeTestPage() {
 
           {/* Proctoring sidebar */}
           <div className="w-56 border-l p-4 space-y-4 hidden lg:block">
-            {/* Webcam preview */}
+            {/* Webcam preview — mirrors the always-mounted hidden video via object-fit */}
             <div className="rounded-lg overflow-hidden bg-black aspect-video relative">
               <video
                 ref={videoRef}

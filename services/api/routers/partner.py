@@ -84,7 +84,7 @@ async def revoke_api_key(key_id: uuid.UUID, partner: CurrentPartner):
         .maybe_single()
         .execute()
     )
-    if not existing.data:
+    if existing is None or not existing.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": "not_found", "code": "KEY_NOT_FOUND"},

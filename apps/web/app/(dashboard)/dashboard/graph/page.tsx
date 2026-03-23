@@ -33,11 +33,11 @@ interface SubjectRetention {
 }
 
 const MASTERY_CONFIG: Record<MasteryState, { color: string; bg: string; label: string }> = {
-  mastered:  { color: "bg-green-500",  bg: "bg-green-50 dark:bg-green-950/20",  label: "Mastered"  },
-  reviewing: { color: "bg-blue-500",   bg: "bg-blue-50 dark:bg-blue-950/20",    label: "Reviewing" },
-  learning:  { color: "bg-yellow-400", bg: "bg-yellow-50 dark:bg-yellow-950/20", label: "Learning" },
-  forgotten: { color: "bg-red-500",    bg: "bg-red-50 dark:bg-red-950/20",      label: "Forgotten" },
-  unseen:    { color: "bg-muted-foreground/40", bg: "", label: "Unseen" },
+  mastered:  { color: "bg-green-500",  bg: "bg-green-50 border-green-200",  label: "Mastered"  },
+  reviewing: { color: "bg-blue-500",   bg: "bg-blue-50 border-blue-200",    label: "Reviewing" },
+  learning:  { color: "bg-yellow-400", bg: "bg-yellow-50 border-yellow-200", label: "Learning" },
+  forgotten: { color: "bg-red-500",    bg: "bg-red-50 border-red-200",      label: "Forgotten" },
+  unseen:    { color: "bg-gray-300",   bg: "border-gray-200",                label: "Unseen"    },
 };
 
 function ConceptNode({ concept, onClick }: { concept: Concept; onClick: () => void }) {
@@ -46,7 +46,7 @@ function ConceptNode({ concept, onClick }: { concept: Concept; onClick: () => vo
     <button
       onClick={onClick}
       title={concept.concepts?.name ?? concept.concept_id}
-      className={`h-4 w-4 rounded-full ${state.color} hover:scale-125 transition-transform cursor-pointer shrink-0`}
+      className={`h-4 w-4 rounded-full ${state.color} hover:scale-150 hover:ring-2 hover:ring-blue-300 hover:ring-offset-2 transition-all cursor-pointer shrink-0`}
     />
   );
 }
@@ -64,7 +64,6 @@ export default function GraphPage() {
   const summary = (data as { summary?: Record<string, number> })?.summary ?? {};
   const subjectRetention: SubjectRetention[] = (data as { subject_retention_index?: SubjectRetention[] })?.subject_retention_index ?? [];
 
-  // Group concepts by subject
   const bySubject: Record<string, { name: string; concepts: Concept[] }> = {};
   for (const c of concepts) {
     const sid = c.concepts?.subject_id ?? "unknown";
@@ -78,33 +77,34 @@ export default function GraphPage() {
   return (
     <div className="p-8 space-y-6">
       <div className="flex items-center gap-3">
-        <Network className="h-5 w-5 text-primary" />
+        <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 shadow-lg shadow-blue-500/20">
+          <Network className="h-5 w-5 text-white" />
+        </div>
         <div>
-          <h1 className="text-xl font-semibold">Knowledge Graph</h1>
-          <p className="text-sm text-muted-foreground">Your concept mastery at a glance</p>
+          <h1 className="text-xl font-semibold text-gray-900">Knowledge Graph</h1>
+          <p className="text-sm text-gray-500">Your concept mastery at a glance</p>
         </div>
       </div>
 
       {isLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>
-          <Skeleton className="h-64" />
+          <Skeleton className="h-64 rounded-xl" />
         </div>
       ) : (
         <>
-          {/* Summary stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {(["mastered", "reviewing", "learning", "forgotten"] as MasteryState[]).map((state) => {
               const cfg = MASTERY_CONFIG[state];
               return (
-                <Card key={state} className={cfg.bg}>
+                <Card key={state} className={`${cfg.bg} card-hover`}>
                   <CardContent className="pt-4">
-                    <p className="text-2xl font-bold">{summary[state] ?? 0}</p>
+                    <p className="text-2xl font-bold text-gray-900">{summary[state] ?? 0}</p>
                     <div className="flex items-center gap-1.5 mt-1">
                       <div className={`h-2 w-2 rounded-full ${cfg.color}`} />
-                      <p className="text-xs text-muted-foreground">{cfg.label}</p>
+                      <p className="text-xs text-gray-600">{cfg.label}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -112,18 +112,17 @@ export default function GraphPage() {
             })}
           </div>
 
-          {/* Subject retention index */}
           {subjectRetention.length > 0 && (
-            <Card>
+            <Card className="border-blue-100/50 bg-white">
               <CardHeader>
-                <CardTitle className="text-sm">Subject Retention Index</CardTitle>
+                <CardTitle className="text-sm text-gray-800">Subject Retention Index</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {subjectRetention.sort((a, b) => b.retention_index - a.retention_index).map((s) => (
                   <div key={s.subject_id} className="space-y-1">
                     <div className="flex justify-between text-sm">
-                      <span className="font-medium">{s.subject_name}</span>
-                      <span className="text-muted-foreground">{s.retention_index}% · {s.concept_count} concepts</span>
+                      <span className="font-medium text-gray-800">{s.subject_name}</span>
+                      <span className="text-gray-500">{s.retention_index}% · {s.concept_count} concepts</span>
                     </div>
                     <Progress
                       value={s.retention_index}
@@ -135,15 +134,14 @@ export default function GraphPage() {
             </Card>
           )}
 
-          {/* Concept node grid — filter by subject */}
-          <Card>
+          <Card className="border-blue-100/50 bg-white">
             <CardHeader>
-              <CardTitle className="text-sm">Concept Nodes</CardTitle>
-              <p className="text-xs text-muted-foreground">Click a dot to inspect a concept</p>
+              <CardTitle className="text-sm text-gray-800">Concept Nodes</CardTitle>
+              <p className="text-xs text-gray-500">Click a dot to inspect a concept</p>
             </CardHeader>
             <CardContent>
               <Tabs value={activeSubject} onValueChange={setActiveSubject}>
-                <TabsList className="flex-wrap h-auto mb-4">
+                <TabsList className="flex-wrap h-auto mb-4 bg-white border border-blue-100/60">
                   <TabsTrigger value="all">All</TabsTrigger>
                   {subjects.map(([sid, { name }]) => (
                     <TabsTrigger key={sid} value={sid}>{name}</TabsTrigger>
@@ -154,7 +152,7 @@ export default function GraphPage() {
                   <div className="space-y-4">
                     {(activeSubject === "all" ? subjects : subjects.filter(([sid]) => sid === activeSubject)).map(([sid, { name, concepts: subConcepts }]) => (
                       <div key={sid}>
-                        <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">{name}</p>
+                        <p className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">{name}</p>
                         <div className="flex flex-wrap gap-2">
                           {subConcepts.map((c) => (
                             <ConceptNode key={c.concept_id} concept={c} onClick={() => setSelectedConcept(c)} />
@@ -163,14 +161,13 @@ export default function GraphPage() {
                       </div>
                     ))}
                     {concepts.length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center py-8">No concepts tracked yet. Start reviewing flashcards!</p>
+                      <p className="text-sm text-gray-400 text-center py-8">No concepts tracked yet. Start reviewing flashcards!</p>
                     )}
                   </div>
                 </TabsContent>
               </Tabs>
 
-              {/* Legend */}
-              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t text-xs text-muted-foreground">
+              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-blue-100/60 text-xs text-gray-500">
                 {(Object.entries(MASTERY_CONFIG) as [MasteryState, typeof MASTERY_CONFIG[MasteryState]][]).map(([state, cfg]) => (
                   <div key={state} className="flex items-center gap-1.5">
                     <div className={`h-3 w-3 rounded-full ${cfg.color}`} />
@@ -183,7 +180,6 @@ export default function GraphPage() {
         </>
       )}
 
-      {/* Concept detail slide-out */}
       <Sheet open={!!selectedConcept} onOpenChange={(open) => !open && setSelectedConcept(null)}>
         <SheetContent>
           {selectedConcept && (
@@ -194,25 +190,25 @@ export default function GraphPage() {
               <div className="mt-6 space-y-4">
                 <div className="flex items-center gap-2">
                   <div className={`h-3 w-3 rounded-full ${MASTERY_CONFIG[selectedConcept.mastery_state]?.color}`} />
-                  <Badge variant="outline">{MASTERY_CONFIG[selectedConcept.mastery_state]?.label}</Badge>
+                  <Badge variant="outline" className="border-blue-200">{MASTERY_CONFIG[selectedConcept.mastery_state]?.label}</Badge>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Mastery Score</p>
+                  <p className="text-xs text-gray-500 mb-1">Mastery Score</p>
                   <Progress value={Math.round((selectedConcept.mastery_score ?? 0) * 100)} />
-                  <p className="text-sm mt-1">{Math.round((selectedConcept.mastery_score ?? 0) * 100)}%</p>
+                  <p className="text-sm mt-1 text-gray-800">{Math.round((selectedConcept.mastery_score ?? 0) * 100)}%</p>
                 </div>
                 {selectedConcept.next_review_date && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1">Next Review</p>
-                    <p className="text-sm font-medium">
+                    <p className="text-xs text-gray-500 mb-1">Next Review</p>
+                    <p className="text-sm font-medium text-gray-800">
                       {new Date(selectedConcept.next_review_date).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
                     </p>
                   </div>
                 )}
                 {selectedConcept.concepts?.subjects?.name && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1">Subject</p>
-                    <p className="text-sm">{selectedConcept.concepts.subjects.name}</p>
+                    <p className="text-xs text-gray-500 mb-1">Subject</p>
+                    <p className="text-sm text-gray-800">{selectedConcept.concepts.subjects.name}</p>
                   </div>
                 )}
               </div>

@@ -1,4 +1,4 @@
-.PHONY: dev db-start db-stop db-reset db-status
+.PHONY: dev db-start db-stop db-reset db-status partner-dev web-dev
 
 # Start local dev (Supabase + auxiliary services)
 dev:
@@ -20,6 +20,14 @@ stop:
 # Reset DB and re-run migrations
 db-reset:
 	supabase db reset
+
+# Start partner portal dev server (port 3001)
+partner-dev:
+	cd apps/partner && npm run dev
+
+# Start student web app dev server (port 3000)
+web-dev:
+	cd apps/web && npm run dev
 
 # Check status
 db-status:

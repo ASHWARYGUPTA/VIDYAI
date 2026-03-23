@@ -55,8 +55,10 @@ _origins_lock = threading.Lock()
 
 _BASE_ORIGINS = {
     "https://vidyai.in",
+    "https://partners.vidyai.in",   # partner portal production
     "http://localhost:3000",
-    "http://localhost:4000",   # local embed test page
+    "http://localhost:3001",        # partner portal dev
+    "http://localhost:4000",        # local embed test page
 }
 
 

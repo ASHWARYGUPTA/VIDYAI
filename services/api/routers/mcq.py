@@ -66,19 +66,38 @@ async def start_test(body: StartTestRequest, user_id: CurrentUserID):
 async def submit_answer(body: AnswerRequest, user_id: CurrentUserID):
     client = get_supabase_service_client()
 
-    session = ms(client.table("test_sessions").select("id, submitted_at").eq("id", str(body.test_session_id)).eq("user_id", str(user_id)))
+    session = ms(
+        client.table("test_sessions")
+        .select("id, submitted_at, metadata")
+        .eq("id", str(body.test_session_id))
+        .eq("user_id", str(user_id))
+    )
     if not session.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error": "not_found", "code": "SESSION_NOT_FOUND"})
     if session.data.get("submitted_at"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"error": "test_already_submitted", "code": "ALREADY_SUBMITTED"})
 
-    client.table("test_answers").upsert({
-        "test_session_id": str(body.test_session_id),
-        "question_id": str(body.question_id),
-        "user_id": str(user_id),
-        "selected_option": body.selected_option,
-        "time_spent_ms": body.time_spent_ms,
-    }).execute()
+    metadata = session.data.get("metadata") or {}
+
+    if "inline_questions" in metadata:
+        # Inline test (e.g. quick JEE) — question IDs are not in the questions table,
+        # so store answers in test_sessions.metadata.answers to avoid the FK constraint.
+        answers = metadata.get("answers") or {}
+        answers[str(body.question_id)] = {
+            "selected_option": body.selected_option,
+            "time_spent_ms": body.time_spent_ms,
+        }
+        metadata["answers"] = answers
+        client.table("test_sessions").update({"metadata": metadata}).eq("id", str(body.test_session_id)).execute()
+    else:
+        client.table("test_answers").upsert({
+            "test_session_id": str(body.test_session_id),
+            "question_id": str(body.question_id),
+            "user_id": str(user_id),
+            "selected_option": body.selected_option,
+            "time_spent_ms": body.time_spent_ms,
+        }).execute()
+
     return {"saved": True}
 
 
@@ -121,9 +140,20 @@ async def get_session(session_id: uuid.UUID, user_id: CurrentUserID):
 
     answers = client.table("test_answers").select("*").eq("test_session_id", str(session_id)).execute()
     question_ids = session.data.get("question_ids", [])
-    questions = client.table("questions").select("*").in_("id", question_ids).execute()
 
-    return {"session": session.data, "answers": answers.data, "questions": questions.data}
+    # Prefer inline questions stored in metadata (e.g. quick JEE test)
+    metadata = session.data.get("metadata") or {}
+    inline = metadata.get("inline_questions")
+    if inline:
+        # Strip correct_option before sending to browser
+        questions_data = [{k: v for k, v in q.items() if k != "correct_option"} for q in inline]
+    elif question_ids:
+        q_result = client.table("questions").select("*").in_("id", question_ids).execute()
+        questions_data = q_result.data
+    else:
+        questions_data = []
+
+    return {"session": session.data, "answers": answers.data, "questions": questions_data}
 
 
 @router.get("/questions")

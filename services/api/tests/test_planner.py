@@ -55,8 +55,11 @@ async def test_get_today_plan_not_found(client):
     with patch("services.api.routers.planner.get_supabase_service_client", return_value=sb):
         r = await client.get("/api/v1/planner/today")
 
-    assert r.status_code == 404
-    assert r.json()["detail"]["code"] == "NO_PLAN_TODAY"
+    # Router returns 200 with plan=None when no plan exists for today
+    assert r.status_code == 200
+    body = r.json()
+    assert body["plan"] is None
+    assert body["completion_percent"] == 0
 
 
 @pytest.mark.asyncio

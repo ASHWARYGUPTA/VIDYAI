@@ -3,9 +3,11 @@ Partner API key authentication dependency.
 Used by the MCP router and partner admin routes.
 Key is NEVER logged — not even partially.
 
-Supports two token types:
+Supports three token types:
   - vida_live_* : permanent partner API key (server-to-server use only)
   - et_*        : short-lived embed token (browser-safe, 60-min TTL)
+  - Supabase JWT: partner portal users authenticated via email/password
+                  (user must exist in partner_users table)
 """
 import hashlib
 import logging
@@ -36,7 +38,7 @@ async def _validate_embed_token(token: str, client) -> dict:
         .execute()
     )
 
-    if not session.data:
+    if session is None or not session.data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_token", "code": "INVALID_EMBED_TOKEN"},
@@ -83,23 +85,97 @@ async def _validate_embed_token(token: str, client) -> dict:
     }
 
 
+async def get_partner_from_jwt(token: str, client) -> dict:
+    """
+    Validate a Supabase user JWT and return partner context by looking up
+    the user in the partner_users table.  Used by the Partner Portal UI.
+    """
+    try:
+        user_resp = client.auth.get_user(token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "invalid_token", "code": "INVALID_JWT"},
+        )
+
+    if not user_resp or not user_resp.user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "invalid_token", "code": "INVALID_JWT"},
+        )
+
+    user_id = user_resp.user.id
+
+    pu = (
+        client.table("partner_users")
+        .select("partner_id, role")
+        .eq("user_id", user_id)
+        .maybe_single()
+        .execute()
+    )
+
+    if pu is None or not pu.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "not_a_partner", "code": "PARTNER_USER_NOT_FOUND"},
+        )
+
+    partner = (
+        client.table("partner_organizations")
+        .select("id, name, slug, tier, monthly_call_limit, calls_used_this_month, is_active, allowed_features")
+        .eq("id", pu.data["partner_id"])
+        .single()
+        .execute()
+    )
+
+    if not partner.data or not partner.data["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "partner_suspended", "code": "PARTNER_INACTIVE"},
+        )
+
+    return {
+        "partner_id": partner.data["id"],
+        "partner_name": partner.data["name"],
+        "key_id": None,
+        "tier": partner.data["tier"],
+        "allowed_features": partner.data["allowed_features"],
+        "scopes": partner.data["allowed_features"],
+        "student_id": None,
+        "token_type": "portal_jwt",
+        "portal_user_id": user_id,
+        "portal_role": pu.data["role"],
+    }
+
+
 async def get_partner(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
 ) -> dict:
     """
     Validate partner token and return partner context.
-    Accepts both permanent API keys (vida_live_*) and embed tokens (et_*).
+    Accepts: permanent API keys (vida_live_*), embed tokens (et_*),
+             and Supabase user JWTs (Partner Portal users).
     Never log the raw token.
     """
     client = get_supabase_service_client()
     raw_token = credentials.credentials
 
-    # Route: embed token (browser SDK) vs permanent API key (server-to-server)
+    # embed token (browser SDK)
     if raw_token.startswith("et_"):
         result = await _validate_embed_token(raw_token, client)
         result["token_type"] = "embed"
         return result
 
+    # permanent API key (server-to-server)
+    if raw_token.startswith("vida_live_"):
+        return await _validate_api_key(raw_token, client)
+
+    # Supabase JWT (partner portal UI login)
+    return await get_partner_from_jwt(raw_token, client)
+
+
+async def _validate_api_key(raw_token: str, client) -> dict:
+    """Validate a vida_live_* API key and return partner context."""
     key_hash = _hash_key(raw_token)
 
     key_row = (
@@ -110,15 +186,14 @@ async def get_partner(
         .execute()
     )
 
-    if not key_row.data or not key_row.data["is_active"]:
+    if key_row is None or not key_row.data or not key_row.data["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_token", "code": "INVALID_API_KEY"},
         )
 
-    from datetime import datetime
     if key_row.data.get("expires_at"):
-        if datetime.fromisoformat(key_row.data["expires_at"]) < datetime.utcnow():
+        if datetime.fromisoformat(key_row.data["expires_at"]) < datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail={"error": "invalid_token", "code": "API_KEY_EXPIRED"},
@@ -151,7 +226,7 @@ async def get_partner(
         "tier": partner.data["tier"],
         "allowed_features": partner.data["allowed_features"],
         "scopes": key_row.data["scopes"],
-        "student_id": None,   # not set for API key auth; set per MCP tool call
+        "student_id": None,
         "token_type": "api_key",
     }
 
