@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
-import { Sidebar } from "@/components/layout/sidebar";
+import { Sidebar, MobileHeader } from "@/components/layout/sidebar";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -22,12 +22,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!profile?.onboarding_completed) redirect("/onboarding");
 
+  const userProp = { id: session.user.id, email: session.user.email ?? "" };
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar user={{ id: session.user.id, email: session.user.email ?? "" }} />
-      <main className="flex-1 overflow-y-auto bg-slate-50/70">
-        {children}
-      </main>
+      <Sidebar user={userProp} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <MobileHeader user={userProp} />
+        <main className="flex-1 overflow-y-auto bg-slate-50/70">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

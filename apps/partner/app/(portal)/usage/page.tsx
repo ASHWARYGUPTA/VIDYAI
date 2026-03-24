@@ -39,9 +39,9 @@ export default function UsagePage() {
   });
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Usage Analytics</h1>
         <div className="flex gap-1 rounded-lg border bg-card p-1">
           {PERIOD_OPTIONS.map((o) => (
@@ -62,11 +62,11 @@ export default function UsagePage() {
 
       {/* Summary stats */}
       {isLoading ? (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[1,2,3].map(i => <Skeleton key={i} className="h-24" />)}
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card>
             <CardContent className="py-5">
               <p className="text-sm text-muted-foreground">Total Calls</p>
@@ -94,9 +94,9 @@ export default function UsagePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Daily calls bar chart */}
-        <Card className="col-span-2">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Calls per Day</CardTitle>
           </CardHeader>

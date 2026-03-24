@@ -68,10 +68,10 @@ export default function RevisionPage() {
 
   /* ─── Loading ─── */
   if (isLoading) return (
-    <div className="p-8 space-y-5 max-w-3xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-3xl mx-auto">
       <Skeleton className="h-8 w-44 rounded-xl" />
-      <Skeleton className="h-[420px] w-full rounded-3xl" />
-      <div className="grid grid-cols-4 gap-3">
+      <Skeleton className="h-[300px] sm:h-[420px] w-full rounded-3xl" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[1,2,3,4].map(i => <Skeleton key={i} className="h-24 rounded-2xl" />)}
       </div>
     </div>
@@ -85,7 +85,7 @@ export default function RevisionPage() {
   const sessionDone_total = sessionDone + remaining;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
 
       {/* ── Top bar ── */}
       <div className="flex items-center justify-between">
@@ -139,13 +139,13 @@ export default function RevisionPage() {
               {/* Flashcard */}
               <div
                 className="flashcard-container w-full cursor-pointer select-none"
-                style={{ height: "420px" }}
+                style={{ height: "clamp(300px, 50vh, 420px)" }}
                 onClick={() => setFlipped(f => !f)}
               >
                 <div className={`flashcard h-full ${flipped ? "flipped" : ""}`}>
 
                   {/* FRONT */}
-                  <div className="flashcard-front h-full rounded-3xl bg-white shadow-xl shadow-gray-200/80 border border-gray-100 flex flex-col items-center justify-center text-center p-10 relative overflow-hidden">
+                  <div className="flashcard-front h-full rounded-3xl bg-white shadow-xl shadow-gray-200/80 border border-gray-100 flex flex-col items-center justify-center text-center p-6 sm:p-10 relative overflow-hidden">
                     <div className="absolute inset-0 opacity-[0.03]"
                       style={{ backgroundImage: "radial-gradient(circle, #000 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
                     <div className="absolute top-5 left-5">
@@ -154,7 +154,7 @@ export default function RevisionPage() {
                     {concept?.chapters?.name && (
                       <p className="text-xs font-semibold tracking-widest text-blue-400 uppercase mb-4">{concept.chapters.name}</p>
                     )}
-                    <h2 className="text-4xl font-bold text-gray-900 leading-tight max-w-sm">{concept?.name ?? "Concept"}</h2>
+                    <h2 className="text-2xl sm:text-4xl font-bold text-gray-900 leading-tight max-w-sm">{concept?.name ?? "Concept"}</h2>
                     <p className="text-gray-300 text-sm mt-8 flex items-center gap-1.5">
                       <span className="h-px w-8 bg-gray-200 inline-block" />
                       tap to reveal
@@ -163,7 +163,7 @@ export default function RevisionPage() {
                   </div>
 
                   {/* BACK */}
-                  <div className="flashcard-back h-full rounded-3xl bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 shadow-xl shadow-blue-500/30 flex flex-col items-center justify-center text-center p-10 relative overflow-hidden">
+                  <div className="flashcard-back h-full rounded-3xl bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 shadow-xl shadow-blue-500/30 flex flex-col items-center justify-center text-center p-6 sm:p-10 relative overflow-hidden">
                     <div className="absolute inset-0 opacity-10"
                       style={{ backgroundImage: "radial-gradient(circle at 80% 20%, white 0%, transparent 50%)" }} />
                     <p className="text-xs font-semibold tracking-widest text-blue-200 uppercase mb-5">{concept?.name}</p>
@@ -176,11 +176,11 @@ export default function RevisionPage() {
 
               {/* Rating buttons */}
               {flipped ? (
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {RATINGS.map(({ value, label, desc, icon: Icon, bg, bar }) => (
                     <button
                       key={value}
-                      className={`flex flex-col items-center justify-center gap-1.5 py-5 rounded-2xl border-2 transition-all ${bg} disabled:opacity-40`}
+                      className={`flex flex-col items-center justify-center gap-1.5 py-4 sm:py-5 rounded-2xl border-2 transition-all ${bg} disabled:opacity-40`}
                       onClick={() => reviewMutation.mutate({ conceptId, qualityScore: value })}
                       disabled={reviewMutation.isPending}
                     >

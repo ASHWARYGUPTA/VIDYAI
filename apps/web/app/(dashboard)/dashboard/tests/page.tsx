@@ -274,7 +274,7 @@ export default function TestsPage() {
   });
 
   return (
-    <div className="p-8 max-w-3xl space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
         <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 shadow-lg shadow-blue-500/20">
           <FileText className="h-5 w-5 text-white" />

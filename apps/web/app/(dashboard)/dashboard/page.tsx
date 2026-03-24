@@ -212,9 +212,9 @@ export default function DashboardPage() {
   const { level, pct: lvlPct, next: nextXp } = xpToLevel(totalXp);
 
   if (dashLoading) return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <Skeleton className="h-9 w-56 rounded-xl" />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[1,2,3,4].map(i => <Skeleton key={i} className="h-28 rounded-2xl" />)}
       </div>
       <Skeleton className="h-48 rounded-2xl" />
@@ -222,25 +222,25 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-4 sm:space-y-6">
 
       {/* ── Greeting ── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Good {getGreeting()} 👋</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Good {getGreeting()} 👋</h1>
           <p className="text-sm text-gray-400 mt-0.5">
             {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
         <Link href="/dashboard/revision">
-          <Button className="bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20 rounded-xl">
+          <Button className="bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg shadow-blue-500/20 rounded-xl w-full sm:w-auto">
             Start Revision <ArrowRight className="h-4 w-4 ml-1.5" />
           </Button>
         </Link>
       </div>
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
           { icon: Flame,    label: "Day Streak",   value: streak,         sub: "consecutive days",        gradient: "from-orange-400 to-red-500",    shadow: "shadow-orange-500/20" },
           { icon: BookOpen, label: "Due Cards",     value: (deck as {total_due?:number})?.total_due ?? 0, sub: `${(deck as {new_cards?:number})?.new_cards ?? 0} new today`, gradient: "from-blue-500 to-blue-600", shadow: "shadow-blue-500/20" },

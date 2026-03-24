@@ -32,7 +32,7 @@ export default function PartnerDashboard() {
 
   if (isLoading) {
     return (
-      <div className="p-8 space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 space-y-6">
         <Skeleton className="h-8 w-48" />
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
@@ -70,8 +70,8 @@ export default function PartnerDashboard() {
   ];
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <Badge variant="secondary">{keys?.keys?.filter(k => k.is_active).length ?? 0} active keys</Badge>
       </div>

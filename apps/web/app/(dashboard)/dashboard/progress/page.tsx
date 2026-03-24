@@ -86,9 +86,9 @@ export default function ProgressPage() {
   });
 
   if (dashLoading) return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <Skeleton className="h-8 w-48 rounded-xl" />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[1,2,3].map(i => <Skeleton key={i} className="h-28 rounded-2xl" />)}
       </div>
       <Skeleton className="h-72 rounded-2xl" />
@@ -120,7 +120,7 @@ export default function ProgressPage() {
     : [];
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
 
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -199,7 +199,7 @@ export default function ProgressPage() {
             const prev   = weeks[weeks.length - 2];
             const delta  = prev ? Math.round((latest.overall_score ?? 0) - (prev.overall_score ?? 0)) : 0;
             return (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
                   { label: "Overall Score",    value: `${Math.round(latest.overall_score ?? 0)}%`,       delta },
                   { label: "Revision Done",    value: `${Math.round(latest.revision_completion_rate ?? 0)}%`, delta: null },

@@ -155,7 +155,7 @@ def verify_signature(raw_body: bytes, header: str, secret: str) -> bool:
 # }`;
 
   return (
-    <div className="p-8 space-y-6 max-w-4xl">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold">Docs & SDK</h1>
         <p className="text-sm text-muted-foreground mt-1">

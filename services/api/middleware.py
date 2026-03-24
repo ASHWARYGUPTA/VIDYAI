@@ -57,6 +57,7 @@ _BASE_ORIGINS = {
     "https://vidyai.in",
     "https://partners.vidyai.in",   # partner portal production
     "https://vidyai-np1p.vercel.app",  # vercel web app
+    "https://vidyai-seven.vercel.app", # vercel partner app
     "http://localhost:3000",
     "http://localhost:3001",        # partner portal dev
     "http://localhost:4000",        # local embed test page
