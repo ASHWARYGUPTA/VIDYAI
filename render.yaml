@@ -1,0 +1,57 @@
+services:
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
+  - type: web
+    name: vidyai-api
+    runtime: python
+    region: singapore
+    plan: starter
+    rootDir: services
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: gunicorn api.main:app -k uvicorn.workers.UvicornWorker -w 2 -b 0.0.0.0:$PORT --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      # Supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # LLM
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: stepfun/step-3.5-flash:free
+      - key: LLM_FALLBACK_MODELS
+        value: meta-llama/llama-3.2-1b-instruct:free,google/gemma-3-4b-it:free
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: VISION_MODEL
+        value: xiaomi/mimo-v2-pro
+      # Redis (auto-filled when you link the Redis service below)
+      - key: REDIS_URL
+        fromService:
+          name: vidyai-redis
+          type: redis
+          property: connectionString
+      # Frontend URL for CORS (update after Vercel deploy)
+      - key: FRONTEND_URL
+        value: https://vidyai.vercel.app
+      # Optional
+      - key: SENTRY_DSN
+        sync: false
+      - key: YOUTUBE_PROXY_URL
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  - type: redis
+    name: vidyai-redis
+    region: singapore
+    plan: starter
+    maxmemoryPolicy: allkeys-lru

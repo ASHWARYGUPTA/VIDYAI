@@ -1,14 +1,24 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mail, Lock, ArrowRight } from "lucide-react";
+
+function SessionExpiredBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("error") !== "session_expired") return null;
+  return (
+    <div className="mx-6 mb-2 rounded-md bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-700">
+      Your session expired. Please sign in again.
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,10 +29,13 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      toast.error(error.message);
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+    if (result?.error) {
+      toast.error("Invalid email or password");
     } else {
       router.push("/dashboard");
       router.refresh();
@@ -31,11 +44,7 @@ export default function LoginPage() {
   }
 
   async function handleGoogle() {
-    const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${location.origin}/auth/callback` },
-    });
+    await signIn("google", { callbackUrl: "/dashboard" });
   }
 
   return (
@@ -44,6 +53,9 @@ export default function LoginPage() {
         <CardTitle className="text-xl">Welcome back</CardTitle>
         <CardDescription>Sign in to continue your learning journey</CardDescription>
       </CardHeader>
+      <Suspense fallback={null}>
+        <SessionExpiredBanner />
+      </Suspense>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4 pt-4">
           <div className="space-y-2">

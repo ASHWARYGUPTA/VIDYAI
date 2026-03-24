@@ -181,8 +181,11 @@ def _get_transcript_ytdlp(video_id: str) -> tuple[str, list]:
     raise ValueError("NO_TRANSCRIPT")
 
 
-_CHUNK_WORDS = 800   # words per map chunk (~1000 tokens each)
-_MAP_WORKERS = 5     # parallel Gemini calls
+_CHUNK_WORDS = 1200  # words per map chunk (used only when Gemini unavailable)
+_MAP_WORKERS = 8     # parallel OpenRouter calls (used only when Gemini unavailable)
+
+# Max words sent to Gemini in a single call (~750K token context, well within limits)
+_GEMINI_MAX_WORDS = 80_000
 
 
 def _chunk_transcript(text: str, chunk_words: int = _CHUNK_WORDS) -> list[str]:
@@ -207,8 +210,26 @@ Rules:
 """
 
 
+def _parse_llm_json(raw: str) -> dict:
+    """Extract the first JSON object from an LLM response string."""
+    raw = (raw or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("No JSON object found in LLM response")
+    return json.loads(raw[start:end + 1])
+
+
+def _single_call(transcript_text: str, llm) -> dict:
+    """Single LLM call — used for both Gemini fast path and short OpenRouter transcripts."""
+    from langchain_core.messages import HumanMessage
+    prompt = f"{_NOTES_SYSTEM}\n\nTranscript:\n{transcript_text}"
+    response = llm.invoke([HumanMessage(content=prompt)])
+    return _parse_llm_json(response.content or "")
+
+
 def _map_chunk(chunk: str, model: str) -> str:
-    """Extract a compact bullet-point summary from one chunk."""
+    """Extract a compact bullet-point summary from one chunk (OpenRouter fallback)."""
     from ..utils.llm import get_llm
     from langchain_core.messages import HumanMessage
     prompt = (
@@ -217,7 +238,7 @@ def _map_chunk(chunk: str, model: str) -> str:
         f"Excerpt:\n{chunk}"
     )
     try:
-        llm = get_llm(model=model, temperature=0.1, max_tokens=300)
+        llm = get_llm(model=model, temperature=0.1, max_tokens=400)
         response = llm.invoke([HumanMessage(content=prompt)])
         return (response.content or "").strip()
     except Exception:
@@ -225,7 +246,7 @@ def _map_chunk(chunk: str, model: str) -> str:
 
 
 def _reduce_summaries(bullet_blocks: list[str], model: str) -> dict:
-    """Merge all mapped bullet blocks into structured Markdown notes."""
+    """Merge all mapped bullet blocks into structured Markdown notes (OpenRouter fallback)."""
     from ..utils.llm import get_llm
     from langchain_core.messages import HumanMessage
     combined = "\n---\n".join(b for b in bullet_blocks if b)
@@ -235,45 +256,50 @@ def _reduce_summaries(bullet_blocks: list[str], model: str) -> dict:
         f"{combined}"
     )
     try:
-        llm = get_llm(model=model, temperature=0.2, max_tokens=1500)
+        llm = get_llm(model=model, temperature=0.2, max_tokens=2048)
         response = llm.invoke([HumanMessage(content=prompt)])
-        raw = (response.content or "").strip()
-        raw = raw[raw.find("{"):raw.rfind("}") + 1]
-        return json.loads(raw)
+        return _parse_llm_json(response.content or "")
     except Exception:
         return {}
 
 
-def _extract_fields(transcript: str, language: str) -> tuple[list, str, str]:
+def _extract_fields(transcript: str, language: str) -> tuple[str, str, str]:
     if not transcript:
-        return [], "", "Untitled"
+        return "", "", "Untitled"
+
+    from ..utils.llm import get_gemini_llm
+
+    words = transcript.split()
+
+    # ── Fast path: single Gemini call (handles any video length in one shot) ──
+    gemini = get_gemini_llm(model="gemini-1.5-flash", temperature=0.2, max_tokens=2048)
+    if gemini:
+        try:
+            # Truncate only if absurdly long (>80K words ≈ 5+ hour video)
+            text_to_use = " ".join(words[:_GEMINI_MAX_WORDS]) if len(words) > _GEMINI_MAX_WORDS else transcript
+            data = _single_call(text_to_use, gemini)
+            notes = data.get("notes", "")
+            logger.info("Gemini single-call succeeded: title=%r", data.get("title"))
+            return notes, data.get("summary", ""), data.get("title", "Untitled")
+        except Exception as e:
+            logger.warning("Gemini fast path failed (%s), falling back to OpenRouter map-reduce", e)
+
+    # ── Slow path: OpenRouter map-reduce (no Gemini key or Gemini failed) ──
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        from ..utils.llm import get_llm
-        from langchain_core.messages import HumanMessage
 
         model = None  # uses LLM_MODEL from env
-        words = transcript.split()
 
-        # Short transcripts: single call, no chunking needed
+        # Short transcripts: single OpenRouter call
         if len(words) <= _CHUNK_WORDS:
-            prompt = (
-                f"{_NOTES_SYSTEM}\n\n"
-                f"Transcript:\n{transcript[:6000]}"
-            )
-            llm = get_llm(model=model, temperature=0.2, max_tokens=1024)
-            response = llm.invoke([HumanMessage(content=prompt)])
-            raw = response.content or ""
-            if "```" in raw:
-                raw = raw[raw.find("{"):raw.rfind("}") + 1]
-            data = json.loads(raw)
+            from ..utils.llm import get_llm
+            llm = get_llm(model=model, temperature=0.2, max_tokens=2048)
+            data = _single_call(transcript[:8000], llm)
             notes = data.get("notes", "")
             return notes, data.get("summary", ""), data.get("title", "Untitled")
 
-        # Long transcripts: MAP-REDUCE
+        # Long transcripts: MAP-REDUCE in parallel
         chunks = _chunk_transcript(transcript, _CHUNK_WORDS)
-
-        # MAP step: parallel chunk extraction
         bullet_blocks: list[str] = [""] * len(chunks)
         with ThreadPoolExecutor(max_workers=_MAP_WORKERS) as executor:
             futures = {executor.submit(_map_chunk, chunk, model): i for i, chunk in enumerate(chunks)}
@@ -284,7 +310,6 @@ def _extract_fields(transcript: str, language: str) -> tuple[list, str, str]:
                 except Exception:
                     bullet_blocks[idx] = ""
 
-        # REDUCE step: merge all bullet blocks
         data = _reduce_summaries(bullet_blocks, model)
         if not data:
             return _fallback_extract(transcript)
@@ -293,19 +318,20 @@ def _extract_fields(transcript: str, language: str) -> tuple[list, str, str]:
         return notes, data.get("summary", ""), data.get("title", "Untitled")
 
     except Exception as e:
-        logger.warning("LangChain map-reduce failed, using fallback", extra={"error": str(e)})
+        logger.warning("OpenRouter map-reduce failed (%s), using no-AI fallback", e)
         return _fallback_extract(transcript)
 
 
-def _fallback_extract(transcript: str) -> tuple[list, str, str]:
-    """No-AI fallback: use first 300 chars as summary, split into chunks as notes."""
+def _fallback_extract(transcript: str) -> tuple[str, str, str]:
+    """No-AI fallback: split transcript into sections as plain Markdown notes."""
     summary = transcript[:300].strip()
     words = transcript.split()
     chunk_size = max(100, len(words) // 5)
-    notes = [
-        {"heading": f"Part {i+1}", "content": " ".join(words[i*chunk_size:(i+1)*chunk_size])}
-        for i in range(min(5, len(words) // chunk_size))
+    parts = [
+        f"## Part {i+1}\n\n" + " ".join(words[i * chunk_size:(i + 1) * chunk_size])
+        for i in range(min(5, max(1, len(words) // chunk_size)))
     ]
+    notes = "\n\n".join(parts)
     return notes, summary, "Processed Video"
 
 

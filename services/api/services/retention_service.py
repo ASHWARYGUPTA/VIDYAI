@@ -17,7 +17,7 @@ async def get_todays_deck(user_id: uuid.UUID, limit: int, include_new: bool) -> 
 
     due = (
         client.table("revision_queue")
-        .select("concept_id, priority_score, concepts(name, subject_id, chapter_id, difficulty_level)")
+        .select("concept_id, priority_score, concepts(name, description, subject_id, chapter_id, difficulty_level, chapters(name))")
         .eq("user_id", str(user_id))
         .eq("is_completed", False)
         .lte("scheduled_date", today)
@@ -47,7 +47,7 @@ async def get_todays_deck(user_id: uuid.UUID, limit: int, include_new: bool) -> 
         new_count = min(5, limit - len(cards))
         new = (
             client.table("learner_concept_states")
-            .select("concept_id, mastery_state, concepts(name, subject_id, chapter_id, difficulty_level)")
+            .select("concept_id, mastery_state, concepts(name, description, subject_id, chapter_id, difficulty_level, chapters(name))")
             .eq("user_id", str(user_id))
             .eq("mastery_state", "unseen")
             .limit(new_count)
@@ -125,7 +125,7 @@ async def compute_fsrs_update(
         "correct_attempts": (state_data.get("correct_attempts", 0) or 0) + (1 if quality_score >= 3 else 0),
         "stability": round(new_stability, 4),
     }
-    client.table("learner_concept_states").upsert(update).execute()
+    client.table("learner_concept_states").upsert(update, on_conflict="user_id,concept_id").execute()
 
     # Update revision_queue
     client.table("revision_queue").update({"is_completed": True}).eq("user_id", str(user_id)).eq("concept_id", str(concept_id)).eq("is_completed", False).execute()
@@ -138,17 +138,34 @@ async def compute_fsrs_update(
         "priority_score": _compute_priority(new_mastery_score, new_interval),
     }).execute()
 
+    # Ensure we have a session_id (concept_interaction_events.session_id is NOT NULL)
+    resolved_session_id = str(session_id) if session_id else None
+    if not resolved_session_id:
+        sess_resp = client.table("study_sessions").insert({
+            "user_id": str(user_id),
+            "session_type": "revision",
+            "started_at": "now()",
+            "ended_at": "now()",
+            "duration_minutes": max(1, (response_time_ms or 0) // 60000),
+            "cards_reviewed": 1,
+            "cards_correct": 1 if quality_score >= 3 else 0,
+            "xp_earned": xp,
+        }).execute()
+        if sess_resp.data:
+            resolved_session_id = sess_resp.data[0]["id"]
+
     # Log interaction event
-    client.table("concept_interaction_events").insert({
-        "user_id": str(user_id),
-        "session_id": str(session_id) if session_id else None,
-        "concept_id": str(concept_id),
-        "event_type": "revision",
-        "quality_score": quality_score,
-        "response_time_ms": response_time_ms,
-        "was_correct": quality_score >= 3,
-        "hint_used": hint_used,
-    }).execute()
+    if resolved_session_id:
+        client.table("concept_interaction_events").insert({
+            "user_id": str(user_id),
+            "session_id": resolved_session_id,
+            "concept_id": str(concept_id),
+            "event_type": "revision",
+            "quality_score": quality_score,
+            "response_time_ms": response_time_ms,
+            "was_correct": quality_score >= 3,
+            "hint_used": hint_used,
+        }).execute()
 
     # Update daily heatmap
     _update_heatmap(user_id, xp, new_mastery_score)

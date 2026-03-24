@@ -1,18 +1,17 @@
-import { createClient } from "@/lib/supabase/client";
+import { getSession } from "next-auth/react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  // getSession() fetches from the NextAuth session which contains the Supabase
+  // access token. FastAPI validates this Supabase JWT directly.
+  const session = await getSession();
+  return session?.supabaseAccessToken
+    ? { Authorization: `Bearer ${session.supabaseAccessToken}` }
+    : {};
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_URL}${path}`, {
     ...options,

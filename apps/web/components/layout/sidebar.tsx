@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   BookOpen, Brain, Calendar, BarChart2, FileText, Home, LogOut, Video, Network, GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
+import { signOut as nextAuthSignOut } from "next-auth/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -23,17 +23,14 @@ const NAV_ITEMS = [
 ];
 
 interface SidebarProps {
-  user: { email?: string; user_metadata?: { full_name?: string; avatar_url?: string } };
+  user: { id?: string; email?: string; user_metadata?: { full_name?: string; avatar_url?: string } };
 }
 
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
 
   async function signOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/login");
+    await nextAuthSignOut({ callbackUrl: "/login" });
   }
 
   const name = user.user_metadata?.full_name ?? user.email ?? "Student";

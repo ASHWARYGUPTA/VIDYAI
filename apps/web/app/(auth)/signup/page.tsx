@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -26,36 +27,47 @@ export default function SignupPage() {
       return;
     }
     setLoading(true);
+
     const supabase = createClient();
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+
+    // Step 1: Attempt to create the Supabase account
+    const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName } },
     });
-    if (signUpError) {
+
+    // "User already registered" means a previous attempt created the auth record
+    // but the app crashed before finishing. Try signing them in directly.
+    const alreadyExists =
+      signUpError?.message?.toLowerCase().includes("already registered") ||
+      signUpError?.message?.toLowerCase().includes("already been registered") ||
+      signUpError?.code === "user_already_exists";
+
+    if (signUpError && !alreadyExists) {
       toast.error(signUpError.message);
       setLoading(false);
       return;
     }
-    if (!signUpData.session) {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) {
-        toast.success("Account created! Please check your email to confirm before signing in.");
-        router.push("/login");
-        setLoading(false);
-        return;
-      }
+
+    // Step 2: Sign in via NextAuth (works for both new + existing accounts)
+    const result = await signIn("credentials", { email, password, redirect: false });
+    if (result?.error) {
+      // Email confirmation required
+      toast.success("Account created! Check your email to confirm, then sign in.");
+      router.push("/login");
+      setLoading(false);
+      return;
     }
+
     router.push("/onboarding");
     setLoading(false);
   }
 
   async function handleGoogle() {
-    const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${location.origin}/auth/callback` },
-    });
+    // For Google, NextAuth creates the Supabase user automatically via signInWithIdToken.
+    // New users land at /dashboard and are redirected to /onboarding by the dashboard layout.
+    await signIn("google", { callbackUrl: "/dashboard" });
   }
 
   return (
@@ -109,7 +121,6 @@ export default function SignupPage() {
                 required
               />
             </div>
-            {/* Password strength indicator */}
             {password.length > 0 && (
               <div className="flex gap-1 pt-1">
                 {[1, 2, 3, 4].map((level) => (

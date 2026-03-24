@@ -86,16 +86,22 @@ async def upload_document(
     # ── Upload to Supabase Storage ─────────────────────────────────────────
     storage_path = f"knowledge/{doc_id}/{filename}"
     try:
+        # Ensure bucket exists (creates it if missing — safe to call repeatedly)
+        try:
+            client.storage.create_bucket("knowledge-base", options={"public": False})
+        except Exception:
+            pass  # already exists
+
         client.storage.from_("knowledge-base").upload(
             path=storage_path,
             file=file_bytes,
             file_options={"content-type": file.content_type or "application/octet-stream"},
         )
     except Exception as e:
-        logger.error("Storage upload failed", extra={"error": str(e)})
+        logger.error("Storage upload failed: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": "storage_upload_failed"},
+            detail={"error": "storage_upload_failed", "detail": str(e)},
         )
 
     # ── Insert document record ─────────────────────────────────────────────

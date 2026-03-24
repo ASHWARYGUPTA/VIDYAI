@@ -1,5 +1,6 @@
 "use client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SessionProvider } from "next-auth/react";
 import { Toaster } from "@/components/ui/sonner";
 import { useState } from "react";
 
@@ -9,9 +10,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   }));
 
   return (
-    <QueryClientProvider client={qc}>
-      {children}
-      <Toaster richColors position="top-right" />
-    </QueryClientProvider>
+    <SessionProvider>
+      <QueryClientProvider client={qc}>
+        {children}
+        <Toaster richColors position="top-right" />
+      </QueryClientProvider>
+    </SessionProvider>
   );
 }
