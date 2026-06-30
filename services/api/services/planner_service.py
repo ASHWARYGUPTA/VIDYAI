@@ -70,6 +70,7 @@ async def rebalance_plan(user_id: uuid.UUID, reason: str | None) -> dict:
         plan_date=today,
         daily_hours=plan.get("plan_config", {}).get("daily_hours", 6),
         exam_type=plan["exam_type"],
+        reason=reason,
     )
     return {"plan": plan, "changes": [], "new_today": today_plan}
 
@@ -80,11 +81,12 @@ async def _generate_daily_plan(
     plan_date: date,
     daily_hours: int,
     exam_type: Any,
+    reason: str | None = None,
 ) -> dict:
     """Generate daily slots. Uses Gemini if available, else fallback."""
     client = get_supabase_service_client()
 
-    slots = await _llm_generate_slots(user_id, exam_type, daily_hours)
+    slots = await _llm_generate_slots(user_id, exam_type, daily_hours, reason)
 
     result = client.table("daily_study_plans").upsert({
         "plan_id": str(plan_id),
@@ -99,10 +101,14 @@ async def _generate_daily_plan(
     return result.data[0] if result.data else {}
 
 
-async def _llm_generate_slots(user_id: uuid.UUID, exam_type: Any, daily_hours: int) -> list:
+async def _llm_generate_slots(user_id: uuid.UUID, exam_type: Any, daily_hours: int, reason: str | None = None) -> list:
     """Generate study slots via OpenRouter. Degrades to default schedule if LLM unavailable."""
     try:
         import json
+        import os
+        from ..config import get_settings
+        
+        settings = get_settings()
         if settings.openrouter_api_key:
             os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key
 
@@ -114,17 +120,20 @@ async def _llm_generate_slots(user_id: uuid.UUID, exam_type: Any, daily_hours: i
 
         system = """You are a study planner for Indian competitive exam students.
 Generate a JSON array of study slots for today. Each slot:
-{"subject": string, "chapter_id": null, "concept_ids": [], "duration_minutes": integer, "type": "new"|"revision"|"test"}
+{"subject": string, "chapter_id": null, "concept_ids": [], "duration_minutes": integer, "type": "new"|"revision"|"test"|"break"}
 Return ONLY valid JSON array, no other text."""
 
-        human = f"Exam: {exam_type}, Hours available: {daily_hours}, Weak areas: {', '.join(weak_summary[:5]) or 'none yet'}"
+        human_prompt = f"Exam: {exam_type}, Hours available: {daily_hours}, Weak areas: {', '.join(weak_summary[:5]) or 'none yet'}"
+        
+        if reason == "burnout_detected":
+            human_prompt += "\nWARNING: Student is showing signs of burnout and high cognitive stress. Reduce total duration heavily, focus purely on light 'revision' or 'break' slots (e.g., mindfulness or light review). Do NOT schedule heavy 'new' learning slots."
 
         from ..utils.llm import get_llm
         from langchain_core.messages import SystemMessage, HumanMessage
         llm = get_llm(temperature=0.2)
         response = await llm.ainvoke([
             SystemMessage(content=system),
-            HumanMessage(content=human),
+            HumanMessage(content=human_prompt),
         ])
 
         raw = response.content or ""
@@ -135,6 +144,13 @@ Return ONLY valid JSON array, no other text."""
 
     except Exception as e:
         logger.warning("Planner LLM failed — using fallback slots", extra={"error": str(e)})
+        
+        if reason == "burnout_detected":
+            return [
+                {"subject": "Mindfulness Break", "chapter_id": None, "concept_ids": [], "duration_minutes": 15, "type": "break"},
+                {"subject": "Physics", "chapter_id": None, "concept_ids": [], "duration_minutes": 30, "type": "revision"},
+            ]
+            
         slot_minutes = (daily_hours * 60) // 3
         return [
             {"subject": "Physics", "chapter_id": None, "concept_ids": [], "duration_minutes": slot_minutes, "type": "new"},

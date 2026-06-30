@@ -1,14 +1,16 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { retentionApi } from "@/lib/api/endpoints";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Network } from "lucide-react";
+import { ReactFlow, Controls, Background, Handle, Position, Node, Edge } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
 type MasteryState = "mastered" | "reviewing" | "learning" | "forgotten" | "unseen";
 
@@ -37,42 +39,108 @@ const MASTERY_CONFIG: Record<MasteryState, { color: string; bg: string; label: s
   reviewing: { color: "bg-blue-500",   bg: "bg-blue-50 border-blue-200",    label: "Reviewing" },
   learning:  { color: "bg-yellow-400", bg: "bg-yellow-50 border-yellow-200", label: "Learning" },
   forgotten: { color: "bg-red-500",    bg: "bg-red-50 border-red-200",      label: "Forgotten" },
-  unseen:    { color: "bg-gray-300",   bg: "border-gray-200",                label: "Unseen"    },
+  unseen:    { color: "bg-gray-300",   bg: "border-gray-200 bg-white",      label: "Unseen"    },
 };
 
-function ConceptNode({ concept, onClick }: { concept: Concept; onClick: () => void }) {
+// Custom Node for React Flow
+function ConceptNodeComponent({ data }: { data: any }) {
+  const concept = data.concept as Concept;
   const state = MASTERY_CONFIG[concept.mastery_state] ?? MASTERY_CONFIG.unseen;
   return (
-    <button
-      onClick={onClick}
+    <div 
+      onClick={() => data.onClick(concept)}
+      className={`px-3 py-2 min-w-[120px] rounded-lg border-2 shadow-sm cursor-pointer transition-all hover:scale-105 ${state.bg}`}
       title={concept.concepts?.name ?? concept.concept_id}
-      className={`h-4 w-4 rounded-full ${state.color} hover:scale-150 hover:ring-2 hover:ring-blue-300 hover:ring-offset-2 transition-all cursor-pointer shrink-0`}
-    />
+    >
+      <Handle type="target" position={Position.Top} className="opacity-0" />
+      <div className="flex flex-col items-center gap-1.5">
+        <div className={`h-3 w-3 rounded-full ${state.color} ${concept.mastery_state === 'learning' || concept.mastery_state === 'reviewing' ? 'animate-pulse' : ''}`} />
+        <span className="text-[10px] font-semibold text-gray-800 line-clamp-2 max-w-[100px] text-center leading-tight">
+          {concept.concepts?.name ?? "Concept"}
+        </span>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="opacity-0" />
+    </div>
   );
 }
+
+const nodeTypes = { customConcept: ConceptNodeComponent };
 
 export default function GraphPage() {
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null);
   const [activeSubject, setActiveSubject] = useState<string>("all");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["knowledge-graph", activeSubject],
-    queryFn: () => retentionApi.knowledgeGraph(activeSubject === "all" ? undefined : activeSubject),
+    queryKey: ["knowledge-graph"],
+    queryFn: () => retentionApi.knowledgeGraph(),
   });
 
   const concepts: Concept[] = (data as { concepts?: Concept[] })?.concepts ?? [];
   const summary = (data as { summary?: Record<string, number> })?.summary ?? {};
-  const subjectRetention: SubjectRetention[] = (data as { subject_retention_index?: SubjectRetention[] })?.subject_retention_index ?? [];
-
-  const bySubject: Record<string, { name: string; concepts: Concept[] }> = {};
-  for (const c of concepts) {
-    const sid = c.concepts?.subject_id ?? "unknown";
-    const sname = c.concepts?.subjects?.name ?? sid;
-    if (!bySubject[sid]) bySubject[sid] = { name: sname, concepts: [] };
-    bySubject[sid].concepts.push(c);
-  }
+  
+  const bySubject = useMemo(() => {
+    const res: Record<string, { name: string; concepts: Concept[] }> = {};
+    for (const c of concepts) {
+      const sid = c.concepts?.subject_id ?? "unknown";
+      const sname = c.concepts?.subjects?.name ?? sid;
+      if (!res[sid]) res[sid] = { name: sname, concepts: [] };
+      res[sid].concepts.push(c);
+    }
+    return res;
+  }, [concepts]);
 
   const subjects = Object.entries(bySubject);
+
+  const { nodes, edges } = useMemo(() => {
+    const rfNodes: Node[] = [];
+    const rfEdges: Edge[] = [];
+    let xOffset = 0;
+    
+    const subjectsToRender = activeSubject === "all" ? subjects : subjects.filter(([sid]) => sid === activeSubject);
+
+    for (const [sid, { name, concepts: subConcepts }] of subjectsToRender) {
+      let y = 0;
+      let x = xOffset;
+      
+      rfNodes.push({
+        id: `subject-${sid}`,
+        type: 'default',
+        position: { x: x + 150, y: y - 80 },
+        data: { label: name.toUpperCase() },
+        style: { fontWeight: 'bold', fontSize: 14, backgroundColor: 'transparent', border: 'none', color: '#64748b' }
+      });
+      
+      subConcepts.forEach((c, idx) => {
+        const row = Math.floor(idx / 3);
+        const col = idx % 3;
+        
+        rfNodes.push({
+          id: c.concept_id,
+          type: 'customConcept',
+          position: { x: x + col * 160, y: y + row * 100 },
+          data: { concept: c, onClick: (c: Concept) => setSelectedConcept(c) },
+        });
+        
+        if (row > 0) {
+          const parentIdx = (row - 1) * 3 + Math.min(col, Math.max(0, subConcepts.length - 1 - (row - 1)*3));
+          const parentId = subConcepts[parentIdx]?.concept_id;
+          if (parentId) {
+            rfEdges.push({
+              id: `e-${parentId}-${c.concept_id}`,
+              source: parentId,
+              target: c.concept_id,
+              animated: c.mastery_state === 'learning' || c.mastery_state === 'reviewing',
+              style: { stroke: '#94a3b8', strokeWidth: 2 }
+            });
+          }
+        }
+      });
+      
+      xOffset += Math.max(500, (Math.min(3, subConcepts.length) * 160) + 100);
+    }
+    
+    return { nodes: rfNodes, edges: rfEdges };
+  }, [subjects, activeSubject]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6">
@@ -91,7 +159,7 @@ export default function GraphPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>
-          <Skeleton className="h-64 rounded-xl" />
+          <Skeleton className="h-[600px] rounded-xl" />
         </div>
       ) : (
         <>
@@ -112,68 +180,37 @@ export default function GraphPage() {
             })}
           </div>
 
-          {subjectRetention.length > 0 && (
-            <Card className="border-blue-100/50 bg-white">
-              <CardHeader>
-                <CardTitle className="text-sm text-gray-800">Subject Retention Index</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {subjectRetention.sort((a, b) => b.retention_index - a.retention_index).map((s) => (
-                  <div key={s.subject_id} className="space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium text-gray-800">{s.subject_name}</span>
-                      <span className="text-gray-500">{s.retention_index}% · {s.concept_count} concepts</span>
-                    </div>
-                    <Progress
-                      value={s.retention_index}
-                      className={s.retention_index >= 75 ? "text-green-500" : s.retention_index >= 50 ? "text-yellow-500" : "text-red-500"}
-                    />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="border-blue-100/50 bg-white">
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-800">Concept Nodes</CardTitle>
-              <p className="text-xs text-gray-500">Click a dot to inspect a concept</p>
-            </CardHeader>
-            <CardContent>
-              <Tabs value={activeSubject} onValueChange={setActiveSubject}>
-                <TabsList className="flex-wrap h-auto mb-4 bg-white border border-blue-100/60">
-                  <TabsTrigger value="all">All</TabsTrigger>
-                  {subjects.map(([sid, { name }]) => (
-                    <TabsTrigger key={sid} value={sid}>{name}</TabsTrigger>
-                  ))}
-                </TabsList>
-
-                <TabsContent value={activeSubject}>
-                  <div className="space-y-4">
-                    {(activeSubject === "all" ? subjects : subjects.filter(([sid]) => sid === activeSubject)).map(([sid, { name, concepts: subConcepts }]) => (
-                      <div key={sid}>
-                        <p className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">{name}</p>
-                        <div className="flex flex-wrap gap-2">
-                          {subConcepts.map((c) => (
-                            <ConceptNode key={c.concept_id} concept={c} onClick={() => setSelectedConcept(c)} />
-                          ))}
-                        </div>
-                      </div>
+          <Card className="border-blue-100/50 bg-white flex flex-col h-[700px]">
+            <CardHeader className="flex-none">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm text-gray-800">Skill Tree Map</CardTitle>
+                  <p className="text-xs text-gray-500">Drag to pan, scroll to zoom. Click nodes for details.</p>
+                </div>
+                <Tabs value={activeSubject} onValueChange={setActiveSubject}>
+                  <TabsList className="bg-gray-50/50 border border-blue-100/60">
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    {subjects.map(([sid, { name }]) => (
+                      <TabsTrigger key={sid} value={sid}>{name}</TabsTrigger>
                     ))}
-                    {concepts.length === 0 && (
-                      <p className="text-sm text-gray-400 text-center py-8">No concepts tracked yet. Start reviewing flashcards!</p>
-                    )}
-                  </div>
-                </TabsContent>
-              </Tabs>
-
-              <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-blue-100/60 text-xs text-gray-500">
-                {(Object.entries(MASTERY_CONFIG) as [MasteryState, typeof MASTERY_CONFIG[MasteryState]][]).map(([state, cfg]) => (
-                  <div key={state} className="flex items-center gap-1.5">
-                    <div className={`h-3 w-3 rounded-full ${cfg.color}`} />
-                    {cfg.label}
-                  </div>
-                ))}
+                  </TabsList>
+                </Tabs>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 p-0 relative">
+              <div className="absolute inset-0 bg-slate-50/50 rounded-b-xl overflow-hidden">
+                <ReactFlow 
+                  nodes={nodes} 
+                  edges={edges} 
+                  nodeTypes={nodeTypes}
+                  fitView 
+                  minZoom={0.1}
+                  maxZoom={1.5}
+                  attributionPosition="bottom-right"
+                >
+                  <Background color="#94a3b8" gap={16} />
+                  <Controls />
+                </ReactFlow>
               </div>
             </CardContent>
           </Card>

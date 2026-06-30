@@ -319,10 +319,13 @@ npm run dev            # http://localhost:3000
 # 4. Backend
 cd services/api
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+cd ../..
+python -m uvicorn api.main:app --app-dir services --reload --port 8000
+
 
 # 5. Run migrations
 cd supabase
+npm install -g supabase
 supabase db push
 ```
 
