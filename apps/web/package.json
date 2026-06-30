@@ -29,6 +29,7 @@
     "@tanstack/react-query": "^5.51.0",
     "@tanstack/react-query-devtools": "^5.95.0",
     "@types/minimatch": "^5.1.2",
+    "@xyflow/react": "^12.11.1",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "csstype": "^3.2.3",

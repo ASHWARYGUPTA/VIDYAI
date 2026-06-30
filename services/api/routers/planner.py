@@ -66,10 +66,29 @@ async def get_today_plan(user_id: CurrentUserID):
     if not result.data:
         return {"plan": None, "completion_percent": 0, "rebalance_alerts": [], "was_auto_rebalanced": False}
 
-    # Detect retention dips: compare last 2 weekly_performance_snapshots
+    # Detect retention dips and calculate cognitive stress
     rebalance_alerts = []
     was_auto_rebalanced = False
+    cognitive_stress_index = 0
+    
     try:
+        # Calculate stress from yesterday's workload/completion
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        yesterday_plan = ms(
+            client.table("daily_study_plans")
+            .select("completion_percent, total_hours")
+            .eq("user_id", str(user_id))
+            .eq("plan_date", yesterday)
+        )
+        if yesterday_plan.data:
+            yp = yesterday_plan.data[0]
+            yp_comp = yp.get("completion_percent", 100)
+            yp_hours = yp.get("total_hours", 0)
+            if yp_comp < 50:
+                cognitive_stress_index += (50 - yp_comp) * 0.8  # up to 40 stress for low completion
+            if yp_hours > 5:
+                cognitive_stress_index += (yp_hours - 5) * 5    # +5 stress for every hour over 5
+                
         snapshots = (
             client.table("weekly_performance_snapshots")
             .select("week_start, subject_scores")
@@ -93,9 +112,18 @@ async def get_today_plan(user_id: CurrentUserID):
                             "prev_retention": round(prev_score, 1),
                             "dip_pct": dip_pct,
                         })
+                        cognitive_stress_index += dip_pct * 1.2
+                        
+        cognitive_stress_index = min(100, round(cognitive_stress_index))
 
-        # Auto-rebalance if significant dips and plan hasn't been rebalanced recently
-        if rebalance_alerts:
+        # Auto-rebalance if burnout detected or significant dips, and hasn't rebalanced recently
+        rebalance_reason = None
+        if cognitive_stress_index >= 70:
+            rebalance_reason = "burnout_detected"
+        elif rebalance_alerts:
+            rebalance_reason = "auto_retention_dip"
+
+        if rebalance_reason:
             active_plan = (
                 client.table("study_plans")
                 .select("id, last_rebalanced_at")
@@ -116,7 +144,7 @@ async def get_today_plan(user_id: CurrentUserID):
                     except (ValueError, TypeError):
                         pass
                 if should_rebalance:
-                    await rebalance_plan(user_id=user_id, reason="auto_retention_dip")
+                    await rebalance_plan(user_id=user_id, reason=rebalance_reason)
                     was_auto_rebalanced = True
                     # Refresh plan after rebalance
                     result = ms(
@@ -133,6 +161,7 @@ async def get_today_plan(user_id: CurrentUserID):
         "completion_percent": result.data.get("completion_percent", 0),
         "rebalance_alerts": rebalance_alerts,
         "was_auto_rebalanced": was_auto_rebalanced,
+        "cognitive_stress_index": cognitive_stress_index,
     }
 
 
