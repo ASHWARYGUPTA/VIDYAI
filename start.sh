@@ -32,6 +32,10 @@ fi
 # ── Log directory ────────────────────────────────────────────────────
 mkdir -p "$ROOT/logs"
 
+# ── Sync Admin Emails to DB ──────────────────────────────────────────
+log "Syncing admin emails to database..."
+services/api/venv/bin/python services/api/sync_admins.py
+
 # ── Start Backend (FastAPI) ──────────────────────────────────────────
 log "Starting backend on :8000 ..."
 (

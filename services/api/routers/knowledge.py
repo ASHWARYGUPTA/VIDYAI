@@ -10,14 +10,14 @@ import uuid
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 
-from ..dependencies import CurrentUserID
+from ..dependencies import CurrentUserID, require_admin
 from ..utils.supabase_client import get_supabase_service_client
 from ..services import knowledge_service
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "webp"}
 MAX_FILE_MB = 50
