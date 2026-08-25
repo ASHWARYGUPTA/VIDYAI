@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     sarvam_api_key: str = ""
     llm_model: str = "google/gemma-3-4b-it:free"
     # Comma-separated fallback models tried in order when primary hits 429
-    llm_fallback_models: str = "meta-llama/llama-3.2-1b-instruct:free,google/gemma-3-4b-it:free"
+    llm_fallback_models: str = "microsoft/phi-3-mini-128k-instruct:free,google/gemma-3-4b-it:free,meta-llama/llama-3.2-1b-instruct"
     # Vision-capable model for image-heavy PDF parsing
     vision_model: str = "xiaomi/mimo-v2-omni"
 
