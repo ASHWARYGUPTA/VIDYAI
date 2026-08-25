@@ -65,5 +65,33 @@ async def require_pro(
     return user
 
 
+async def require_admin(
+    user: Annotated[dict, Depends(get_current_user)],
+) -> dict:
+    """Verify user is an admin by checking the database."""
+    client = get_supabase_service_client()
+    user_email = user.get("email")
+    
+    if not user_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "admin_privileges_required"},
+        )
+        
+    result = (
+        client.table("admins")
+        .select("email")
+        .eq("email", user_email)
+        .maybe_single()
+        .execute()
+    )
+    
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "admin_privileges_required"},
+        )
+    return user
+
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 CurrentUserID = Annotated[uuid.UUID, Depends(get_current_user_id)]

@@ -108,7 +108,7 @@ async def _call_llm(
 
         system = (
             f"You are VidyAI, an expert tutor for JEE/NEET/UPSC students. {lang_instruction} "
-            "Be concise, accurate, and always cite your sources using [SOURCE N] markers."
+            "Be concise, accurate, and always cite your sources using [SOURCE N] markers.   "
         )
 
         if chunks:

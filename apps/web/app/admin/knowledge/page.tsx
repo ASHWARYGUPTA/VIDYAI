@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createClient } from "@/lib/supabase/client";
+import { getSession } from "next-auth/react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface KnowledgeDoc {
@@ -67,9 +67,8 @@ interface SearchResult {
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  const session = await getSession();
+  const token = (session as any)?.supabaseAccessToken;
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {

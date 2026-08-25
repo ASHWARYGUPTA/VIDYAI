@@ -1,7 +1,11 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import { createClient } from "@supabase/supabase-js";
+
+class InvalidLoginError extends CredentialsSignin {
+  code = "Invalid email or password";
+}
 
 // Supabase client used server-side only (in JWT callback) to exchange Google
 // ID token for a Supabase session. Uses the anon key — signInWithIdToken
@@ -16,6 +20,15 @@ function getSupabaseAuthClient() {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
+  logger: {
+    error(err) {
+      // Completely silence the annoying CredentialsSignin stack trace
+      if (err instanceof Error && err.name === "CredentialsSignin") {
+        return;
+      }
+      console.error(err);
+    },
+  },
   providers: [
     // ── Email / Password ──────────────────────────────────────────────────
     Credentials({
@@ -30,7 +43,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: credentials.email as string,
           password: credentials.password as string,
         });
-        if (error || !data.session) return null;
+        
+        if (error || !data.session) {
+          console.log(`[Auth] Login failed for ${credentials.email}: User doesn't exist or wrong password.`);
+          throw new InvalidLoginError();
+        }
+        
         // Return enough for the jwt callback to pick up the Supabase tokens
         return {
           id: data.session.user.id,

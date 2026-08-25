@@ -1,16 +1,21 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+import { auth } from "@/lib/auth";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const session = await auth();
+  const user = session?.user;
 
-  if (!user) redirect("/login");
+  if (!user || !user.email) redirect("/login");
 
-  // If ADMIN_EMAILS is configured, enforce it; otherwise allow any authenticated user
-  if (ADMIN_EMAILS.length > 0 && !ADMIN_EMAILS.includes(user.email ?? "")) {
+  const supabase = createServiceClient();
+  const { data: adminRecord } = await supabase
+    .from("admins")
+    .select("email")
+    .eq("email", user.email)
+    .maybeSingle();
+
+  if (!adminRecord) {
     redirect("/dashboard");
   }
 

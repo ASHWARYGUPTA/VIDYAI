@@ -94,7 +94,7 @@ async def _generate_daily_plan(
         "slots": slots,
         "is_completed": False,
         "completion_percent": 0,
-    }).execute()
+    }, on_conflict="user_id,plan_date").execute()
 
     return result.data[0] if result.data else {}
 
